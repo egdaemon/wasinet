@@ -15,6 +15,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// The native implementation ensure the api interopt is correct.
+
 func unixsockaddr(addr unsafe.Pointer, addrLen uintptr) (sa unix.Sockaddr, err error) {
 	v := ffiguest.RawRead[rawSockaddrAny](addr, addrLen)
 	wsa, err := anyToSockaddr(&v)
@@ -24,13 +26,10 @@ func unixsockaddr(addr unsafe.Pointer, addrLen uintptr) (sa unix.Sockaddr, err e
 
 	switch t := wsa.(type) {
 	case *sockipaddr[sockip4]:
-		log.Println("IPv4")
 		return &unix.SockaddrInet4{Port: int(t.port), Addr: t.addr.ip}, nil
 	case *sockipaddr[sockip6]:
-		log.Println("IPv6")
 		return &unix.SockaddrInet6{Port: int(t.port), Addr: t.addr.ip, ZoneId: 0}, nil
 	case *sockaddrUnix:
-		log.Println("Unix")
 		return &unix.SockaddrUnix{Name: t.name}, nil
 	default:
 		return nil, syscall.ENOTSUP
@@ -62,31 +61,30 @@ func wasisocketaddr(sa unix.Sockaddr) (*rawSockaddrAny, error) {
 }
 
 func sock_open(af int32, socktype int32, proto int32, fd unsafe.Pointer) syscall.Errno {
-	log.Println("sock_open", af, socktype, proto)
 	_fd, errno := unix.Socket(int(af), int(socktype), int(proto))
-	log.Println("opened", _fd)
 	ffiguest.WriteInt32(fd, int32(_fd))
 	return ffi.Errno(errno)
 }
 
-func sock_bind(fd int32, addr unsafe.Pointer, addrLen uintptr) syscall.Errno {
-	wsa, err := unixsockaddr(addr, addrLen)
+func sock_bind(fd int32, addr unsafe.Pointer, addrlen uintptr) syscall.Errno {
+	wsa, err := unixsockaddr(addr, addrlen)
 	if err != nil {
 		return ffi.Errno(err)
 	}
 
-	log.Printf("YAY: %d - %T\n", fd, wsa)
 	return ffi.Errno(unix.Bind(int(fd), wsa))
 }
 
 func sock_listen(fd int32, backlog int32) syscall.Errno {
-	log.Println("listen", fd, backlog)
-	err := ffi.Errno(unix.Listen(int(fd), int(backlog)))
-	return err
+	return ffi.Errno(unix.Listen(int(fd), int(backlog)))
 }
 
 func sock_connect(fd int32, addr unsafe.Pointer, addrlen uintptr, port uint32) syscall.Errno {
-	return syscall.ENOTSUP
+	wsa, err := unixsockaddr(addr, addrlen)
+	if err != nil {
+		return ffi.Errno(err)
+	}
+	return ffi.Errno(unix.Connect(int(fd), wsa))
 }
 
 func sock_getsockopt(fd int32, level uint32, name uint32, value unsafe.Pointer, valueLen uint32) syscall.Errno {
@@ -95,12 +93,12 @@ func sock_getsockopt(fd int32, level uint32, name uint32, value unsafe.Pointer, 
 
 func sock_setsockopt(fd int32, level uint32, name uint32, valueptr unsafe.Pointer, valueLen uintptr) syscall.Errno {
 	switch name {
-	case syscall.SO_LINGER: // TODO: implement SO_LINGER
-		// This accepts a struct linger value.
-		return syscall.ENOTSUP
-	case syscall.SO_BINDTODEVICE: // TODO: implement SO_BINDTODEVICE
-		// This accepts a string value.
-		return syscall.ENOTSUP
+	case syscall.SO_LINGER: // this is untested.
+		value := ffiguest.RawRead[unix.Timeval](valueptr, valueLen)
+		return ffi.Errno(unix.SetsockoptTimeval(int(fd), int(level), int(name), &value))
+	case syscall.SO_BINDTODEVICE: // this is untested.
+		value := ffiguest.StringRead(valueptr, uint32(valueLen))
+		return ffi.Errno(unix.SetsockoptString(int(fd), int(level), int(name), value))
 	default:
 		value := binary.LittleEndian.Uint32(ffiguest.BytesRead(valueptr, valueLen))
 		return ffi.Errno(unix.SetsockoptInt(int(fd), int(level), int(name), int(value)))
@@ -108,7 +106,6 @@ func sock_setsockopt(fd int32, level uint32, name uint32, valueptr unsafe.Pointe
 }
 
 func sock_getlocaladdr(fd int32, addr unsafe.Pointer) syscall.Errno {
-	log.Println("sock_getlocaladdr")
 	sa, err := unix.Getsockname(int(fd))
 	if err != nil {
 		return ffi.Errno(err)
@@ -117,13 +114,21 @@ func sock_getlocaladdr(fd int32, addr unsafe.Pointer) syscall.Errno {
 	if err != nil {
 		return ffi.Errno(err)
 	}
-	log.Println(_addr)
 	ffiguest.WriteRaw(addr, *_addr)
 	return ffi.ErrnoSuccess()
 }
 
 func sock_getpeeraddr(fd int32, addr unsafe.Pointer) syscall.Errno {
-	return syscall.ENOTSUP
+	sa, err := unix.Getpeername(int(fd))
+	if err != nil {
+		return ffi.Errno(err)
+	}
+	_addr, err := wasisocketaddr(sa)
+	if err != nil {
+		return ffi.Errno(err)
+	}
+	ffiguest.WriteRaw(addr, *_addr)
+	return ffi.ErrnoSuccess()
 }
 
 func sock_recv_from(
@@ -151,6 +156,10 @@ func sock_send_to(
 	return syscall.ENOTSUP
 }
 
+func sock_shutdown(fd, how int32) syscall.Errno {
+	return ffi.Errno(unix.Shutdown(int(fd), int(how)))
+}
+
 func sock_getaddrip(
 	networkptr unsafe.Pointer, networklen uint32,
 	addressptr unsafe.Pointer, addresslen uint32,
@@ -172,7 +181,6 @@ func sock_getaddrip(
 	if reslength*net.IPv6len > int(maxResLen) {
 		reslength = int(maxResLen / net.IPv6len)
 	}
-	log.Println("DERP RESLENGTH", reslength)
 
 	buf = make([]byte, 0, maxResLen)
 	for _, i := range ip[:reslength] {
@@ -197,7 +205,7 @@ func sock_getaddrport(
 
 	network := ffiguest.StringRead(networkptr, networklen)
 	service := ffiguest.StringRead(serviceptr, servicelen)
-	log.Println("sock_getaddrport", network, service)
+
 	if port, err = net.DefaultResolver.LookupPort(context.Background(), network, service); err != nil {
 		return uint32(ffi.Errno(err))
 	}
@@ -205,8 +213,4 @@ func sock_getaddrport(
 	ffiguest.WriteUint32(portptr, uint32(port))
 
 	return 0
-}
-
-func sock_shutdown(fd, how int32) syscall.Errno {
-	return syscall.ENOTSUP
 }
