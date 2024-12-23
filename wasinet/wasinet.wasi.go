@@ -17,7 +17,7 @@ func sock_bind(fd int32, addr unsafe.Pointer, addrlen uintptr) syscall.Errno
 
 //go:wasmimport wasi_snapshot_preview1 sock_connect
 //go:noescape
-func sock_connect(fd int32, addr unsafe.Pointer, addrlen uintptr, port uint32) syscall.Errno
+func sock_connect(fd int32, addr unsafe.Pointer, addrlen uintptr) syscall.Errno
 
 //go:wasmimport wasi_snapshot_preview1 sock_listen
 //go:noescape

@@ -85,7 +85,7 @@ func listen(fd int, backlog int) error {
 
 func connect(fd int, sa sockaddr) error {
 	rawaddr, rawaddrlen := ffiguest.Raw(sa.sockaddr())
-	errno := sock_connect(int32(fd), rawaddr, rawaddrlen, uint32(sa.sockport()))
+	errno := sock_connect(int32(fd), rawaddr, rawaddrlen)
 	runtime.KeepAlive(sa)
 	if errno != 0 {
 		return errno

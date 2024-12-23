@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/netip"
 	"os"
@@ -78,7 +77,7 @@ func listenAddr(addr net.Addr) (net.Listener, error) {
 	if err := setReuseAddress(fd); err != nil {
 		return nil, err
 	}
-	log.Println("checkpoint")
+
 	bindAddr, err := socketAddress(addr)
 	if err != nil {
 		return nil, os.NewSyscallError("bind", err)

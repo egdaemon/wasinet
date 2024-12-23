@@ -80,7 +80,7 @@ func sock_listen(fd int32, backlog int32) syscall.Errno {
 	return ffi.Errno(unix.Listen(int(fd), int(backlog)))
 }
 
-func sock_connect(fd int32, addr unsafe.Pointer, addrlen uintptr, port uint32) syscall.Errno {
+func sock_connect(fd int32, addr unsafe.Pointer, addrlen uintptr) syscall.Errno {
 	wsa, err := unixsockaddr(addr, addrlen)
 	if err != nil {
 		return ffi.Errno(err)
@@ -88,7 +88,7 @@ func sock_connect(fd int32, addr unsafe.Pointer, addrlen uintptr, port uint32) s
 	return ffi.Errno(unix.Connect(int(fd), wsa))
 }
 
-func sock_getsockopt(fd int32, level uint32, name uint32, dst unsafe.Pointer, dstlen uint32) syscall.Errno {
+func sock_getsockopt(fd int32, level uint32, name uint32, dst unsafe.Pointer, _ uint32) syscall.Errno {
 	switch name {
 	default:
 		v, err := unix.GetsockoptInt(int(fd), int(level), int(name))

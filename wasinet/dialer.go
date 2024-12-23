@@ -148,7 +148,6 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	}
 
 	if sotype == syscall.SOCK_DGRAM {
-		log.Println("CHECKPOINT")
 		name, err := getsockname(fd)
 		if err != nil {
 			return nil, err
@@ -165,7 +164,7 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	f := os.NewFile(uintptr(fd), "")
 	fd = -1 // now the *os.File owns the file descriptor
 	defer f.Close()
-	log.Println("CHECKPOINT")
+
 	if inProgress {
 		rawConn, err := f.SyscallConn()
 		if err != nil {
@@ -179,7 +178,6 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 				var value int
 				value, err = getsockopt(int(fd), SOL_SOCKET, syscall.SO_ERROR)
 				if err != nil {
-					log.Println("DERP", err)
 					return true // done
 				}
 				switch syscall.Errno(value) {
