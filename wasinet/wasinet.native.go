@@ -127,12 +127,10 @@ func sock_getlocaladdr(fd int32, addr unsafe.Pointer) syscall.Errno {
 func sock_getpeeraddr(fd int32, addr unsafe.Pointer) syscall.Errno {
 	sa, err := unix.Getpeername(int(fd))
 	if err != nil {
-		log.Println("checkpoint", fd)
 		return ffi.Errno(err)
 	}
 	_addr, err := wasisocketaddr(sa)
 	if err != nil {
-		log.Println("checkpoint")
 		return ffi.Errno(err)
 	}
 	ffiguest.WriteRaw(addr, *_addr)
