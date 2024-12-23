@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egdaemon/wasinetruntime/internal/errorsx"
+	"github.com/egdaemon/wasinet/internal/errorsx"
 )
 
 type deadline interface {
@@ -44,11 +44,13 @@ func ReadString(path ...string) string {
 
 // Must is a small language extension for panicing on the common
 // value, error return pattern. only used in tests.
-func Must[T any](t testing.TB, v T, err error) T {
-	if err != nil {
-		t.Fatal(err)
+func Must[T any](v T, err error) func(testing.TB) T {
+	return func(t testing.TB) T {
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
 	}
-	return v
 }
 
 // Tempenvvar temporarily set the environment variable.

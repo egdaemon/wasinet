@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"syscall"
@@ -79,7 +78,6 @@ func Dial(network, address string) (net.Conn, error) {
 func DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	addrs, err := lookupAddr(ctx, opdial, network, address)
 	if err != nil {
-		log.Println("checkpoint")
 		addr := &netAddr{network, address}
 		return nil, dialErr(addr, err)
 	}

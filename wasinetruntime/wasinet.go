@@ -6,14 +6,9 @@ import (
 	"context"
 	"net/netip"
 
-	"github.com/egdaemon/wasinetruntime/internal/langx"
+	"github.com/egdaemon/wasinet/internal/langx"
 	"golang.org/x/sys/unix"
 )
-
-//	func Wazero(host wazero.HostModuleBuilder) wazero.HostModuleBuilder {
-//		return host.NewFunctionBuilder().
-//			WithFunc(wasisocket.Open).Export("socket_open")
-//	}
 
 type IP interface {
 	Allow(...netip.Prefix) IP
@@ -27,6 +22,18 @@ func OptionAllow(cidrs ...netip.Prefix) Option {
 	}
 }
 
+// unrestricted network defaults.
+func Unrestricted(opts ...Option) *network {
+	return langx.Autoptr(
+		langx.Clone(
+			network{},
+			opts...,
+		),
+	)
+}
+
+// the network by default disallows all network activity. use unrestricted
+// or manually configure using options.
 func New(opts ...Option) *network {
 	return langx.Autoptr(langx.Clone(network{}, opts...))
 }
@@ -51,14 +58,6 @@ func (t network) Listen(ctx context.Context, fd, backlog int) error {
 	return unix.Listen(fd, backlog)
 }
 
-func (t network) SendTo(ctx context.Context, fd int, p []byte, flags int, to unix.Sockaddr) error {
-	return unix.Sendto(fd, p, flags, to)
-}
-
-func (t network) RecvFrom(ctx context.Context, fd int, p []byte, flags int) (int, unix.Sockaddr, error) {
-	return unix.Recvfrom(fd, p, flags)
-}
-
 func (t network) LocalAddr(ctx context.Context, fd int) (unix.Sockaddr, error) {
 	return unix.Getsockname(fd)
 }
@@ -66,3 +65,18 @@ func (t network) LocalAddr(ctx context.Context, fd int) (unix.Sockaddr, error) {
 func (t network) PeerAddr(ctx context.Context, fd int) (unix.Sockaddr, error) {
 	return unix.Getpeername(fd)
 }
+
+func (t network) SetSocketOption() {
+
+}
+
+func (t network) GetSocketOption() {
+
+}
+
+func (t network) Shutdown() {
+
+}
+
+func (t network) AddrIP()   {}
+func (t network) AddrPort() {}

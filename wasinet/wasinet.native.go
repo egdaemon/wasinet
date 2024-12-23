@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/egdaemon/wasinetruntime/ffi"
-	"github.com/egdaemon/wasinetruntime/ffiguest"
+	"github.com/egdaemon/wasinet/ffi"
+	"github.com/egdaemon/wasinet/ffiguest"
 	"golang.org/x/sys/unix"
 )
 

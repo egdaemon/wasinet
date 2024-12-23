@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/egdaemon/wasinetruntime/ffiguest"
+	"github.com/egdaemon/wasinet/ffiguest"
 )
 
 const (
@@ -317,44 +317,6 @@ func netaddr(network string, ip net.IP, port int) net.Addr {
 	}
 	return nil
 }
-
-// const (
-// 	AF_UNSPEC = iota
-// 	AF_INET
-// 	AF_INET6
-// 	AF_UNIX
-// )
-
-// const (
-// 	SOCK_ANY = iota
-// 	SOCK_DGRAM
-// 	SOCK_STREAM
-// )
-
-// const (
-// 	SOL_SOCKET = iota
-// )
-
-// const (
-// 	SO_REUSEADDR = iota
-// 	_
-// 	SO_ERROR
-// 	_
-// 	SO_BROADCAST
-// )
-
-// const (
-// 	AI_PASSIVE = 1 << iota
-// 	_
-// 	AI_NUMERICHOST
-// 	AI_NUMERICSERV
-// )
-
-// const (
-// 	IPPROTO_IP = iota
-// 	IPPROTO_TCP
-// 	IPPROTO_UDP
-// )
 
 func newOpError(op string, addr net.Addr, err error) error {
 	return &net.OpError{

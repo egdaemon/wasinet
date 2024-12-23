@@ -1,12 +1,13 @@
 package wasinet_test
 
 import (
+	"io"
 	"log"
 	"net"
 	"os"
 	"testing"
 
-	"github.com/egdaemon/wasinetruntime/wasinet"
+	"github.com/egdaemon/wasinet/wasinet"
 )
 
 func TestMain(m *testing.M) {
@@ -28,12 +29,28 @@ func (t udpaddr) Addr() net.Addr {
 }
 
 func listentcp(t testing.TB, network, address string) net.Listener {
-	li, err := net.Listen(network, address)
+	li, err := wasinet.Listen(network, address)
 	if err != nil {
 		log.Println("checkpoint")
 		t.Fatal(err)
 	}
 
+	go func() {
+		for conn, err := li.Accept(); err == nil; conn, err = li.Accept() {
+			server, client := net.Pipe()
+			go func(c net.Conn) {
+				if _, err := io.Copy(c, server); err != nil {
+					log.Println("server copy failed", err)
+				}
+			}(conn)
+			go func(c net.Conn) {
+				defer c.Close()
+				if _, err := io.Copy(client, c); err != nil {
+					log.Println("client copy failed", err)
+				}
+			}(conn)
+		}
+	}()
 	t.Cleanup(func() {
 		if err := li.Close(); err != nil {
 			t.Fatal(err)

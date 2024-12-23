@@ -1,13 +1,13 @@
 //go:build !wasip1
 
-package wasisocket
+package wasinetruntime
 
 import (
 	"context"
 	"log"
 	"syscall"
 
-	"github.com/egdaemon/wasinetruntime/ffi"
+	"github.com/egdaemon/wasinet/ffi"
 	"golang.org/x/sys/unix"
 )
 
@@ -206,15 +206,3 @@ func AddrInfo(fn AddrInfoFn) AddrInfoHostFn {
 		return uint32(syscall.ENOTSUP)
 	}
 }
-
-// "sock_open":         wazergo.F3((*Module).WasmEdgeSockOpen),
-// "sock_bind":         wazergo.F3((*Module).WasmEdgeSockBind),
-// "sock_connect":      wazergo.F3((*Module).WasmEdgeSockConnect),
-// "sock_listen":       wazergo.F2((*Module).WasmEdgeSockListen),
-// "sock_send_to":      wazergo.F6((*Module).WasmEdgeSockSendTo),
-// "sock_recv_from":    wazergo.F7((*Module).WasmEdgeV2SockRecvFrom),
-// "sock_getsockopt":   wazergo.F5((*Module).WasmEdgeSockGetOpt),
-// "sock_setsockopt":   wazergo.F4((*Module).WasmEdgeSockSetOpt),
-// "sock_getlocaladdr": wazergo.F3((*Module).WasmEdgeV2SockLocalAddr),
-// "sock_getpeeraddr":  wazergo.F3((*Module).WasmEdgeV2SockPeerAddr),
-// "sock_getaddrinfo":  wazergo.F6((*Module).WasmEdgeSockAddrInfo),

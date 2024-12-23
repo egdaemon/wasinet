@@ -5,8 +5,8 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/egdaemon/wasinetruntime/ffierrors"
-	"github.com/egdaemon/wasinetruntime/internal/errorsx"
+	"github.com/egdaemon/wasinet/ffierrors"
+	"github.com/egdaemon/wasinet/internal/errorsx"
 )
 
 func Error(code uint32, msg error) error {

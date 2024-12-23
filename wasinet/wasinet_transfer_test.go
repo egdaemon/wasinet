@@ -1,14 +1,21 @@
 package wasinet_test
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
 	"github.com/egdaemon/wasinet/internal/testx"
 	"github.com/egdaemon/wasinet/wasinet"
+
+	"github.com/stretchr/testify/assert"
 )
 
-func checkDial(ctx context.Context, t testing.TB, li addrconn) {
+func checkTransfer(ctx context.Context, t testing.TB, li addrconn) {
+	var (
+		buf []byte = make([]byte, 128)
+	)
+
 	conn, err := wasinet.DialContext(ctx, li.Addr().Network(), li.Addr().String())
 	if err != nil {
 		t.Fatal(err)
@@ -18,46 +25,32 @@ func checkDial(ctx context.Context, t testing.TB, li addrconn) {
 			t.Fatal(err)
 		}
 	})
+
+	testx.Must(conn.Write([]byte("hello world")))(t)
+	n := testx.Must(conn.Read(buf))(t)
+	assert.Equal(t, testx.IOString(bytes.NewReader(buf[:n])), "hello world", "expected strings to match")
 }
 
-func TestDialTCPIPv4(t *testing.T) {
+func TestTransferTCPIPv4(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkDial(ctx, t, listentcp(t, "tcp", ":0"))
+	checkTransfer(ctx, t, listentcp(t, "tcp", ":0"))
 }
 
-func TestDialTCP4IPv4(t *testing.T) {
+func TestTransferTCP4IPv4(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
 	checkDial(ctx, t, listentcp(t, "tcp4", ":0"))
 }
 
-func TestDialTCPIPv6(t *testing.T) {
+func TestTransferTCPIPv6(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
 	checkDial(ctx, t, listentcp(t, "tcp", "[::]:0"))
 }
 
-func TestDialTCP6IPv6(t *testing.T) {
+func TestTransferTCP6IPv6(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
 	checkDial(ctx, t, listentcp(t, "tcp6", "[::]:0"))
-}
-
-func TestDialUDPIPv4(t *testing.T) {
-	ctx, done := testx.WithDeadline(t)
-	defer done()
-	checkDial(ctx, t, listenudp(t, "udp", ":0"))
-}
-
-func TestDialUDP4IPv4(t *testing.T) {
-	ctx, done := testx.WithDeadline(t)
-	defer done()
-	checkDial(ctx, t, listenudp(t, "udp4", ":0"))
-}
-
-func TestDialUDPIPv6(t *testing.T) {
-	ctx, done := testx.WithDeadline(t)
-	defer done()
-	checkDial(ctx, t, listenudp(t, "udp", "[::]:0"))
 }

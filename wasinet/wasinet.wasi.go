@@ -7,39 +7,39 @@ import (
 	"unsafe"
 )
 
-//go:wasmimport wasi_snapshot_preview1 sock_open
+//go:wasmimport wasinet_v0 sock_open
 //go:noescape
 func sock_open(af int32, socktype int32, proto int32, fd unsafe.Pointer) syscall.Errno
 
-//go:wasmimport wasi_snapshot_preview1 sock_bind
+//go:wasmimport wasinet_v0 sock_bind
 //go:noescape
 func sock_bind(fd int32, addr unsafe.Pointer, addrlen uintptr) syscall.Errno
 
-//go:wasmimport wasi_snapshot_preview1 sock_connect
+//go:wasmimport wasinet_v0 sock_connect
 //go:noescape
 func sock_connect(fd int32, addr unsafe.Pointer, addrlen uintptr) syscall.Errno
 
-//go:wasmimport wasi_snapshot_preview1 sock_listen
+//go:wasmimport wasinet_v0 sock_listen
 //go:noescape
 func sock_listen(fd int32, backlog int32) syscall.Errno
 
-//go:wasmimport wasi_snapshot_preview1 sock_getsockopt
+//go:wasmimport wasinet_v0 sock_getsockopt
 //go:noescape
 func sock_getsockopt(fd int32, level uint32, name uint32, value unsafe.Pointer, valueLen uint32) syscall.Errno
 
-//go:wasmimport wasi_snapshot_preview1 sock_setsockopt
+//go:wasmimport wasinet_v0 sock_setsockopt
 //go:noescape
 func sock_setsockopt(fd int32, level uint32, name uint32, value unsafe.Pointer, valueLen uint32) syscall.Errno
 
-//go:wasmimport wasi_snapshot_preview1 sock_getlocaladdr
+//go:wasmimport wasinet_v0 sock_getlocaladdr
 //go:noescape
 func sock_getlocaladdr(fd int32, addr unsafe.Pointer) syscall.Errno
 
-//go:wasmimport wasi_snapshot_preview1 sock_getpeeraddr
+//go:wasmimport wasinet_v0 sock_getpeeraddr
 //go:noescape
 func sock_getpeeraddr(fd int32, addr unsafe.Pointer) syscall.Errno
 
-//go:wasmimport wasi_snapshot_preview1 sock_recv_from
+//go:wasmimport wasinet_v0 sock_recv_from
 //go:noescape
 func sock_recv_from(
 	fd int32,
@@ -52,7 +52,7 @@ func sock_recv_from(
 	oflags unsafe.Pointer,
 ) syscall.Errno
 
-//go:wasmimport wasi_snapshot_preview1 sock_send_to
+//go:wasmimport wasinet_v0 sock_send_to
 //go:noescape
 func sock_send_to(
 	fd int32,
@@ -64,23 +64,10 @@ func sock_send_to(
 	nwritten unsafe.Pointer,
 ) syscall.Errno
 
-// //go:wasmimport wasi_snapshot_preview1 sock_getaddrinfo
-// //go:noescape
-// func sock_getaddrinfo(
-// 	node unsafe.Pointer,
-// 	nodeLen uint32,
-// 	service unsafe.Pointer,
-// 	serviceLen uint32,
-// 	hints unsafe.Pointer,
-// 	res unsafe.Pointer,
-// 	maxResLen uint32,
-// 	resLen unsafe.Pointer,
-// ) syscall.Errno
-
-//go:wasmimport wasi_snapshot_preview1 sock_shutdown
+//go:wasmimport wasinet_v0 sock_shutdown
 func sock_shutdown(fd, how int32) syscall.Errno
 
-//go:wasmimport wasi_snapshot_preview1 sock_getaddrport
+//go:wasmimport wasinet_v0 sock_getaddrport
 //go:noescape
 func sock_getaddrip(
 	networkptr unsafe.Pointer, networklen uint32,
@@ -88,7 +75,7 @@ func sock_getaddrip(
 	ipres unsafe.Pointer, maxResLen uint32, ipreslen unsafe.Pointer,
 ) syscall.Errno
 
-//go:wasmimport wasi_snapshot_preview1 sock_getaddrport
+//go:wasmimport wasinet_v0 sock_getaddrport
 //go:noescape
 func sock_getaddrport(
 	networkptr unsafe.Pointer, networklen uint32,
