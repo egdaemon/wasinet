@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"log"
 	"net"
+	"strconv"
 	"syscall"
 	"unsafe"
 
@@ -43,7 +44,7 @@ func wasisocketaddr(sa unix.Sockaddr) (*rawSockaddrAny, error) {
 		return a.sockaddr(), nil
 
 	case *unix.SockaddrInet6:
-		a := sockipaddr[sockip6]{port: uint32(t.Port), addr: sockip6{ip: t.Addr, zone: t.ZoneId}}
+		a := sockipaddr[sockip6]{port: uint32(t.Port), addr: sockip6{ip: t.Addr, zone: strconv.FormatUint(uint64(t.ZoneId), 10)}} //t.ZoneId}}
 		return a.sockaddr(), nil
 	case *unix.SockaddrUnix:
 		name := t.Name

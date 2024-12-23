@@ -173,7 +173,7 @@ type sockip4 struct {
 
 type sockip6 struct {
 	ip   [16]byte
-	zone uint32
+	zone string
 }
 
 type sockaddrUnix struct {
@@ -382,7 +382,7 @@ func socketAddress(addr net.Addr) (sockaddr, error) {
 		if ipv4 := ip.To4(); ipv4 != nil {
 			return &sockipaddr[sockip4]{addr: sockip4{ip: ([4]byte)(ipv4)}, port: uint32(port)}, nil
 		} else if len(ip) == net.IPv6len {
-			return &sockipaddr[sockip6]{addr: sockip6{ip: ([16]byte)(ip), zone: 0}, port: uint32(port)}, nil
+			return &sockipaddr[sockip6]{addr: sockip6{ip: ([16]byte)(ip), zone: zone}, port: uint32(port)}, nil
 		} else {
 			return nil, &net.AddrError{
 				Err:  "unsupported address type",
@@ -433,7 +433,6 @@ func netaddrfamily(addr net.Addr) int {
 
 func netaddrproto(_ net.Addr) int {
 	return syscall.IPPROTO_IP
-	// return syscall.IPPROTO_IPV6
 }
 
 func socketType(addr net.Addr) (int, error) {
