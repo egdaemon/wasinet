@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-type memory interface {
+type Memory interface {
 
 	// // ReadUint32Le reads a uint32 in little-endian encoding from the underlying buffer at the offset in or returns
 	// // false if out of range.
@@ -36,9 +36,9 @@ type memory interface {
 	// // false if out of range.
 	// WriteUint16Le(offset uint32, v uint16) bool
 
-	// // WriteUint32Le writes the value in little-endian encoding to the underlying buffer at the offset in or returns
-	// // false if out of range.
-	// WriteUint32Le(offset, v uint32) bool
+	// WriteUint32Le writes the value in little-endian encoding to the underlying buffer at the offset in or returns
+	// false if out of range.
+	WriteUint32Le(offset, v uint32) bool
 
 	// // WriteFloat32Le writes the value in 32 IEEE 754 little-endian encoded bits to the underlying buffer at the offset
 	// // or returns false if out of range.
@@ -96,7 +96,7 @@ type memory interface {
 	// WriteString(offset uint32, v string) bool
 }
 
-func ReadString(m memory, offset uint32, len uint32) (string, error) {
+func ReadString(m Memory, offset uint32, len uint32) (string, error) {
 	var (
 		ok   bool
 		data []byte
@@ -109,7 +109,7 @@ func ReadString(m memory, offset uint32, len uint32) (string, error) {
 	return string(data), nil
 }
 
-func ReadStringArray(m memory, offset uint32, length uint32, argssize uint32) (args []string, err error) {
+func ReadStringArray(m Memory, offset uint32, length uint32, argssize uint32) (args []string, err error) {
 	args = make([]string, 0, length)
 
 	for offset, i := offset, uint32(0); i < length*2; offset, i = offset+(2*argssize), i+2 {
@@ -127,7 +127,7 @@ func ReadStringArray(m memory, offset uint32, length uint32, argssize uint32) (a
 	return args, nil
 }
 
-func ReadArrayElement(m memory, offset, len uint32) (data []byte, err error) {
+func ReadArrayElement(m Memory, offset, len uint32) (data []byte, err error) {
 	var (
 		ok            bool
 		eoffset, elen uint32
@@ -152,7 +152,7 @@ func ReadMicroDeadline(ctx context.Context, deadline int64) (context.Context, co
 	return context.WithDeadline(ctx, time.UnixMicro(deadline))
 }
 
-func ReadBytes(m memory, offset uint32, len uint32) (data []byte, err error) {
+func ReadBytes(m Memory, offset uint32, len uint32) (data []byte, err error) {
 	var (
 		ok bool
 	)

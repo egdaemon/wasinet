@@ -1,12 +1,19 @@
-package wasinet
+//go:build !wasip1
+
+package wasinetruntime
 
 import (
 	"context"
 	"net/netip"
 
-	"github.com/egdaemon/wasinet/internal/langx"
+	"github.com/egdaemon/wasinetruntime/internal/langx"
 	"golang.org/x/sys/unix"
 )
+
+//	func Wazero(host wazero.HostModuleBuilder) wazero.HostModuleBuilder {
+//		return host.NewFunctionBuilder().
+//			WithFunc(wasisocket.Open).Export("socket_open")
+//	}
 
 type IP interface {
 	Allow(...netip.Prefix) IP

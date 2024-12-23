@@ -5,8 +5,8 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/egdaemon/wasinet/ffierrors"
-	"github.com/egdaemon/wasinet/internal/errorsx"
+	"github.com/egdaemon/wasinetruntime/ffierrors"
+	"github.com/egdaemon/wasinetruntime/internal/errorsx"
 )
 
 func Error(code uint32, msg error) error {
@@ -35,11 +35,15 @@ func StringArray(a ...string) (unsafe.Pointer, uint32, uint32) {
 	return unsafe.Pointer(unsafe.SliceData(a)), uint32(len(a)), uint32(unsafe.Sizeof(&a))
 }
 
-func Bytes(d []byte) (unsafe.Pointer, uint32) {
-	return unsafe.Pointer(unsafe.SliceData(d)), uint32(len(d))
+func BytesResult(d []byte, reslengthdst *uint32) (unsafe.Pointer, uint32, unsafe.Pointer) {
+	return unsafe.Pointer(unsafe.SliceData(d)), uint32(len(d)), unsafe.Pointer(reslengthdst)
 }
 
-func BytesRead(dptr unsafe.Pointer, dlen uint32) []byte {
+func Bytes(d []byte) (unsafe.Pointer, uintptr) {
+	return unsafe.Pointer(unsafe.SliceData(d)), uintptr(len(d))
+}
+
+func BytesRead(dptr unsafe.Pointer, dlen uintptr) []byte {
 	return unsafe.Slice((*byte)(dptr), dlen)
 }
 
@@ -49,4 +53,28 @@ func ContextDeadline(ctx context.Context) int64 {
 	}
 
 	return math.MaxInt64
+}
+
+func Uint32(dst *uint32) unsafe.Pointer {
+	return unsafe.Pointer(dst)
+}
+
+func WriteInt32(dst unsafe.Pointer, src int32) {
+	*(*int32)(dst) = src
+}
+
+func WriteUint32(dst unsafe.Pointer, src uint32) {
+	*(*uint32)(dst) = src
+}
+
+func WriteRaw[T any](dst unsafe.Pointer, src T) {
+	*(*T)(dst) = src
+}
+
+func Raw[T any](s *T) (unsafe.Pointer, uintptr) {
+	return unsafe.Pointer(s), unsafe.Sizeof(*s)
+}
+
+func RawRead[T any](ptr unsafe.Pointer, dlen uintptr) T {
+	return *(*T)(ptr)
 }

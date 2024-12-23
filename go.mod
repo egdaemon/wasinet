@@ -1,8 +1,7 @@
-module github.com/egdaemon/wasinet
+module github.com/egdaemon/wasinetruntime
 
 go 1.23.4
 
-require (
-	github.com/tetratelabs/wazero v1.8.2 // indirect
-	golang.org/x/sys v0.28.0 // indirect
-)
+require golang.org/x/sys v0.28.0
+
+require github.com/davecgh/go-spew v1.1.1 // indirect
