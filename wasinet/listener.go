@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/netip"
 	"os"
@@ -61,7 +62,7 @@ func listenErr(addr net.Addr, err error) error {
 }
 
 func listenAddr(addr net.Addr) (net.Listener, error) {
-	fd, err := socket(netaddrfamily(addr), syscall.SOCK_STREAM, netaddrproto((addr)))
+	fd, err := socket(netaddrfamily(addr), syscall.SOCK_STREAM, netaddrproto(addr))
 	if err != nil {
 		return nil, os.NewSyscallError("socket", err)
 	}
@@ -77,7 +78,7 @@ func listenAddr(addr net.Addr) (net.Listener, error) {
 	if err := setReuseAddress(fd); err != nil {
 		return nil, err
 	}
-
+	log.Println("checkpoint")
 	bindAddr, err := socketAddress(addr)
 	if err != nil {
 		return nil, os.NewSyscallError("bind", err)
@@ -109,7 +110,7 @@ func listenAddr(addr net.Addr) (net.Listener, error) {
 }
 
 func listenPacketAddr(addr net.Addr) (net.PacketConn, error) {
-	fd, err := socket(netaddrfamily(addr), SOCK_DGRAM, 0)
+	fd, err := socket(netaddrfamily(addr), syscall.SOCK_DGRAM, netaddrproto(addr))
 	if err != nil {
 		return nil, os.NewSyscallError("socket", err)
 	}
@@ -170,7 +171,7 @@ func makeListener(l net.Listener, addr sockaddr) net.Listener {
 	default:
 		l = &listener{l}
 	}
-	setNetAddr(SOCK_STREAM, l.Addr(), addr)
+	setNetAddr(syscall.SOCK_STREAM, l.Addr(), addr)
 	return l
 }
 
@@ -183,8 +184,8 @@ func makePacketConn(f *os.File, laddr, raddr sockaddr) *packetConn {
 		conn.laddr = new(net.UDPAddr)
 		conn.raddr = new(net.UDPAddr)
 	}
-	setNetAddr(SOCK_DGRAM, conn.laddr, laddr)
-	setNetAddr(SOCK_DGRAM, conn.raddr, raddr)
+	setNetAddr(syscall.SOCK_DGRAM, conn.laddr, laddr)
+	setNetAddr(syscall.SOCK_DGRAM, conn.raddr, raddr)
 	conn.conn, _ = f.SyscallConn()
 	return conn
 }
@@ -287,9 +288,9 @@ func (c *packetConn) ReadMsgUDPAddrPort(b, oob []byte) (n, oobn, flags int, addr
 		}
 		var addr netip.Addr
 		switch raw.family {
-		case AF_INET:
+		case syscall.AF_INET:
 			addr = netip.AddrFrom4(([4]byte)(raw.addr[:4]))
-		case AF_INET6:
+		case syscall.AF_INET6:
 			addr = netip.AddrFrom16(([16]byte)(raw.addr[:16]))
 		}
 		addrPort = netip.AddrPortFrom(addr, uint16(port))
@@ -333,7 +334,7 @@ func (c *packetConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 
 func (c *packetConn) WriteMsgUnix(b, oob []byte, addr *net.UnixAddr) (n, oobn int, err error) {
 	rawConnErr := c.conn.Write(func(fd uintptr) (done bool) {
-		raw := rawSockaddrAny{family: AF_UNIX}
+		raw := rawSockaddrAny{family: syscall.AF_UNIX}
 		copy(raw.addr[:], addr.Name)
 		n, err = sendto(int(fd), [][]byte{b}, raw, 0, 0)
 		return err != syscall.EAGAIN
@@ -354,11 +355,11 @@ func (c *packetConn) WriteMsgUDPAddrPort(b, oob []byte, addrPort netip.AddrPort)
 		addr := addrPort.Addr()
 		port := addrPort.Port()
 		if addr.Is4() {
-			raw.family = AF_INET
+			raw.family = syscall.AF_INET
 			ipv4 := addr.As4()
 			copy(raw.addr[:], ipv4[:])
 		} else {
-			raw.family = AF_INET6
+			raw.family = syscall.AF_INET6
 			ipv6 := addr.As16()
 			copy(raw.addr[:], ipv6[:])
 		}
@@ -401,9 +402,9 @@ func setNetAddr(sotype int, dst net.Addr, src sockaddr) {
 		a.IP, a.Port = sockaddrIPAndPort(src)
 	case *net.UnixAddr:
 		switch sotype {
-		case SOCK_STREAM:
+		case syscall.SOCK_STREAM:
 			a.Net = "unix"
-		case SOCK_DGRAM:
+		case syscall.SOCK_DGRAM:
 			a.Net = "unixgram"
 		}
 		a.Name = sockaddrName(src)
@@ -441,8 +442,8 @@ func makeConn(c net.Conn) (net.Conn, error) {
 			c = &unixConn{Conn: c}
 		}
 
-		setNetAddr(SOCK_STREAM, c.LocalAddr(), addr)
-		setNetAddr(SOCK_STREAM, c.RemoteAddr(), peer)
+		setNetAddr(syscall.SOCK_STREAM, c.LocalAddr(), addr)
+		setNetAddr(syscall.SOCK_STREAM, c.RemoteAddr(), peer)
 
 	})
 	if err == nil {

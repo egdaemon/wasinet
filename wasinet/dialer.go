@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"syscall"
@@ -78,6 +79,7 @@ func Dial(network, address string) (net.Conn, error) {
 func DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	addrs, err := lookupAddr(ctx, opdial, network, address)
 	if err != nil {
+		log.Println("checkpoint")
 		addr := &netAddr{network, address}
 		return nil, dialErr(addr, err)
 	}
@@ -92,6 +94,7 @@ func DialContext(ctx context.Context, network, address string) (net.Conn, error)
 			break
 		}
 	}
+
 	return nil, dialErr(addr, err)
 }
 
@@ -100,12 +103,12 @@ func dialErr(addr net.Addr, err error) error {
 }
 
 func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
-	proto := netaddrfamily(addr)
+	af := netaddrfamily(addr)
 	sotype, err := socketType(addr)
 	if err != nil {
 		return nil, os.NewSyscallError("socket", err)
 	}
-	fd, err := socket(proto, sotype, 0)
+	fd, err := socket(af, sotype, netaddrproto(addr))
 	if err != nil {
 		return nil, os.NewSyscallError("socket", err)
 	}
@@ -118,7 +121,7 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	if err := setNonBlock(fd); err != nil {
 		return nil, err
 	}
-	if sotype == SOCK_DGRAM && proto != AF_UNIX {
+	if sotype == syscall.SOCK_DGRAM && af != syscall.AF_UNIX {
 		if err := setsockopt(fd, SOL_SOCKET, SO_BROADCAST, 1); err != nil {
 			// If the system does not support broadcast we should still be able
 			// to use the datagram socket.
@@ -144,7 +147,8 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 		return nil, os.NewSyscallError("connect", err)
 	}
 
-	if sotype == SOCK_DGRAM {
+	if sotype == syscall.SOCK_DGRAM {
+		log.Println("CHECKPOINT")
 		name, err := getsockname(fd)
 		if err != nil {
 			return nil, err
@@ -161,7 +165,7 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	f := os.NewFile(uintptr(fd), "")
 	fd = -1 // now the *os.File owns the file descriptor
 	defer f.Close()
-
+	log.Println("CHECKPOINT")
 	if inProgress {
 		rawConn, err := f.SyscallConn()
 		if err != nil {
@@ -173,8 +177,9 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 			var err error
 			rawConnErr := rawConn.Write(func(fd uintptr) bool {
 				var value int
-				value, err = getsockopt(int(fd), SOL_SOCKET, SO_ERROR)
+				value, err = getsockopt(int(fd), SOL_SOCKET, syscall.SO_ERROR)
 				if err != nil {
+					log.Println("DERP", err)
 					return true // done
 				}
 				switch syscall.Errno(value) {

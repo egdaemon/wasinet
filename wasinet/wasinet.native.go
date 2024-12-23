@@ -87,8 +87,13 @@ func sock_connect(fd int32, addr unsafe.Pointer, addrlen uintptr, port uint32) s
 	return ffi.Errno(unix.Connect(int(fd), wsa))
 }
 
-func sock_getsockopt(fd int32, level uint32, name uint32, value unsafe.Pointer, valueLen uint32) syscall.Errno {
-	return syscall.ENOTSUP
+func sock_getsockopt(fd int32, level uint32, name uint32, dst unsafe.Pointer, dstlen uint32) syscall.Errno {
+	switch name {
+	default:
+		v, err := unix.GetsockoptInt(int(fd), int(level), int(name))
+		ffiguest.WriteUint32(dst, uint32(v))
+		return ffi.Errno(err)
+	}
 }
 
 func sock_setsockopt(fd int32, level uint32, name uint32, valueptr unsafe.Pointer, valueLen uintptr) syscall.Errno {
@@ -121,10 +126,12 @@ func sock_getlocaladdr(fd int32, addr unsafe.Pointer) syscall.Errno {
 func sock_getpeeraddr(fd int32, addr unsafe.Pointer) syscall.Errno {
 	sa, err := unix.Getpeername(int(fd))
 	if err != nil {
+		log.Println("checkpoint", fd)
 		return ffi.Errno(err)
 	}
 	_addr, err := wasisocketaddr(sa)
 	if err != nil {
+		log.Println("checkpoint")
 		return ffi.Errno(err)
 	}
 	ffiguest.WriteRaw(addr, *_addr)

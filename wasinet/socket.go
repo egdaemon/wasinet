@@ -3,7 +3,6 @@ package wasinet
 import (
 	"context"
 	"errors"
-	"log"
 	"net"
 	"os"
 	"runtime"
@@ -152,12 +151,12 @@ func (s *sockipaddr[T]) sockaddr() *rawSockaddrAny {
 	buf := ffiguest.BytesRead(ptr, plen)
 
 	raddr := rawSockaddrAny{
-		family: AF_INET,
+		family: syscall.AF_INET,
 	}
 
 	switch any(s.addr).(type) {
 	case sockip6:
-		raddr.family = AF_INET6
+		raddr.family = syscall.AF_INET6
 	}
 
 	copy(raddr.addr[:], buf)
@@ -185,7 +184,7 @@ func (s *sockaddrUnix) sockaddr() *rawSockaddrAny {
 	ptr, plen := unsafe.Pointer(s), unsafe.Sizeof(*s)
 	buf := ffiguest.BytesRead(ptr, plen)
 	raddr := rawSockaddrAny{
-		family: AF_UNIX,
+		family: syscall.AF_UNIX,
 	}
 	copy(raddr.addr[:], buf)
 	return &raddr
@@ -275,13 +274,13 @@ func sendto(fd int, iovs [][]byte, addr rawSockaddrAny, port, flags int32) (int,
 
 func anyToSockaddr(rsa *rawSockaddrAny) (sockaddr, error) {
 	switch rsa.family {
-	case AF_INET:
+	case syscall.AF_INET:
 		addr := (*sockipaddr[sockip4])(unsafe.Pointer(&rsa.addr))
 		return addr, nil
-	case AF_INET6:
+	case syscall.AF_INET6:
 		addr := (*sockipaddr[sockip6])(unsafe.Pointer(&rsa.addr))
 		return addr, nil
-	case AF_UNIX:
+	case syscall.AF_UNIX:
 		addr := (*sockaddrUnix)(unsafe.Pointer(&rsa.addr))
 		return addr, nil
 	default:
@@ -319,43 +318,43 @@ func netaddr(network string, ip net.IP, port int) net.Addr {
 	return nil
 }
 
-const (
-	AF_UNSPEC = iota
-	AF_INET
-	AF_INET6
-	AF_UNIX
-)
+// const (
+// 	AF_UNSPEC = iota
+// 	AF_INET
+// 	AF_INET6
+// 	AF_UNIX
+// )
 
-const (
-	SOCK_ANY = iota
-	SOCK_DGRAM
-	SOCK_STREAM
-)
+// const (
+// 	SOCK_ANY = iota
+// 	SOCK_DGRAM
+// 	SOCK_STREAM
+// )
 
-const (
-	SOL_SOCKET = iota
-)
+// const (
+// 	SOL_SOCKET = iota
+// )
 
-const (
-	SO_REUSEADDR = iota
-	_
-	SO_ERROR
-	_
-	SO_BROADCAST
-)
+// const (
+// 	SO_REUSEADDR = iota
+// 	_
+// 	SO_ERROR
+// 	_
+// 	SO_BROADCAST
+// )
 
-const (
-	AI_PASSIVE = 1 << iota
-	_
-	AI_NUMERICHOST
-	AI_NUMERICSERV
-)
+// const (
+// 	AI_PASSIVE = 1 << iota
+// 	_
+// 	AI_NUMERICHOST
+// 	AI_NUMERICSERV
+// )
 
-const (
-	IPPROTO_IP = iota
-	IPPROTO_TCP
-	IPPROTO_UDP
-)
+// const (
+// 	IPPROTO_IP = iota
+// 	IPPROTO_TCP
+// 	IPPROTO_UDP
+// )
 
 func newOpError(op string, addr net.Addr, err error) error {
 	return &net.OpError{
@@ -381,10 +380,8 @@ func setNonBlock(fd int) error {
 func socketAddress(addr net.Addr) (sockaddr, error) {
 	ipaddr := func(ip net.IP, zone string, port int) (sockaddr, error) {
 		if ipv4 := ip.To4(); ipv4 != nil {
-			log.Println("socket address", addr.String())
 			return &sockipaddr[sockip4]{addr: sockip4{ip: ([4]byte)(ipv4)}, port: uint32(port)}, nil
 		} else if len(ip) == net.IPv6len {
-			log.Println("ZONE", zone)
 			return &sockipaddr[sockip6]{addr: sockip6{ip: ([16]byte)(ip), zone: 0}, port: uint32(port)}, nil
 		} else {
 			return nil, &net.AddrError{
@@ -413,7 +410,6 @@ func socketAddress(addr net.Addr) (sockaddr, error) {
 
 func netaddrfamily(addr net.Addr) int {
 	ipfamily := func(ip net.IP) int {
-		log.Println("IP", ip.To16(), ip.To4(), len(ip))
 		if ip.To4() == nil {
 			return syscall.AF_INET6
 		}
@@ -443,9 +439,9 @@ func netaddrproto(_ net.Addr) int {
 func socketType(addr net.Addr) (int, error) {
 	switch addr.Network() {
 	case "tcp", "tcp4", "tcp6", "unix", "unixpacket":
-		return SOCK_STREAM, nil
+		return syscall.SOCK_STREAM, nil
 	case "udp", "udp4", "udp6", "unixgram":
-		return SOCK_DGRAM, nil
+		return syscall.SOCK_DGRAM, nil
 	default:
 		return -1, syscall.EPROTOTYPE
 	}
