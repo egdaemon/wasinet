@@ -2,6 +2,7 @@ package ffiguest
 
 import (
 	"context"
+	"encoding/binary"
 	"math"
 	"unsafe"
 
@@ -61,6 +62,10 @@ func Uint32(dst *uint32) unsafe.Pointer {
 
 func WriteInt32(dst unsafe.Pointer, src int32) {
 	*(*int32)(dst) = src
+}
+
+func ReadUint32(ptr unsafe.Pointer, length uintptr) uint32 {
+	return binary.LittleEndian.Uint32(BytesRead(ptr, length))
 }
 
 func WriteUint32(dst unsafe.Pointer, src uint32) {

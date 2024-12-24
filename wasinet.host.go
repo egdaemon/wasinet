@@ -23,7 +23,7 @@ func readsockaddr(
 	return unixsockaddr(wsa)
 }
 
-type OpenFn func(ctx context.Context, af, socktype, protocol uint32) (fd int, err error)
+type OpenFn func(ctx context.Context, af, socktype, protocol int) (fd int, err error)
 type OpenHostFn func(ctx context.Context, m ffi.Memory, af uint32, socktype uint32, proto uint32, fd uintptr) syscall.Errno
 
 func SocketOpen(open OpenFn) OpenHostFn {
@@ -32,7 +32,7 @@ func SocketOpen(open OpenFn) OpenHostFn {
 		m ffi.Memory,
 		af uint32, socktype uint32, proto uint32, fd uintptr,
 	) syscall.Errno {
-		_fd, errno := open(ctx, af, socktype, proto)
+		_fd, errno := open(ctx, int(af), int(socktype), int(proto))
 		if !m.WriteUint32Le(uint32(fd), uint32(_fd)) {
 			return syscall.EFAULT
 		}
@@ -142,32 +142,18 @@ func SocketSetOpt(fn SetOptFn) SetOptHostFn {
 		level int32,
 		name int32,
 		valueptr uintptr,
-		valueLen uint32,
+		valuelen uint32,
 	) syscall.Errno {
-		switch name {
-		case syscall.SO_LINGER: // this is untested.
-			value, err := ffi.RawRead[unix.Timeval](m, valueptr, valueLen)
-			if err != nil {
-				return ffi.Errno(err)
-			}
-			return ffi.Errno(unix.SetsockoptTimeval(int(fd), int(level), int(name), value))
-		case syscall.SO_BINDTODEVICE: // this is untested.
-			value, err := ffi.ReadString(m, valueptr, valueLen)
-			if err != nil {
-				return ffi.Errno(err)
-			}
-			return ffi.Errno(unix.SetsockoptString(int(fd), int(level), int(name), value))
-		default:
-			value, err := ffi.Uint32Read(m, valueptr, valueLen)
-			if err != nil {
-				return ffi.Errno(err)
-			}
-			return ffi.Errno(unix.SetsockoptInt(int(fd), int(level), int(name), int(value)))
+		value, err := ffi.BytesRead(m, valueptr, valuelen)
+		if err != nil {
+			return ffi.Errno(err)
 		}
+
+		return ffi.Errno(fn(ctx, int(fd), int(level), int(name), value))
 	}
 }
 
-type GetOptFn func(ctx context.Context, fd int, level, name int, value []byte) (int, error)
+type GetOptFn func(ctx context.Context, fd int, level, name int, value []byte) (any, error)
 type GetOptHostFn func(ctx context.Context, m ffi.Memory, fd int32, level int32, name int32, value uintptr, vallen uint32) syscall.Errno
 
 func SocketGetOpt(fn GetOptFn) GetOptHostFn {
@@ -178,15 +164,22 @@ func SocketGetOpt(fn GetOptFn) GetOptHostFn {
 		level int32,
 		name int32,
 		valueptr uintptr,
-		vallen uint32,
+		valuelen uint32,
 	) syscall.Errno {
-		switch name {
+		value, err := ffi.BytesRead(m, valueptr, valuelen)
+		if err != nil {
+			return ffi.Errno(err)
+		}
+		rv, err := fn(ctx, int(fd), int(level), int(name), value)
+		if err != nil {
+			return ffi.Errno(err)
+		}
+		switch av := rv.(type) {
+		case int:
+			return ffi.Errno(ffi.Uint32Write(m, valueptr, uint32(av)))
 		default:
-			v, err := unix.GetsockoptInt(int(fd), int(level), int(name))
-			if err != nil {
-				return ffi.Errno(err)
-			}
-			return ffi.Errno(ffi.Uint32Write(m, valueptr, uint32(v)))
+			log.Printf("unsupported socket option type: %T\n", rv)
+			return syscall.ENOTSUP
 		}
 	}
 }
@@ -237,85 +230,112 @@ func SocketPeerAddr(fn PeerAddrFn) PeerAddrHostFn {
 	}
 }
 
-type ShutdownFn func(ctx context.Context, fd, how int32) error
+type ShutdownFn func(ctx context.Context, fd, how int) error
 type ShutdownHostFn func(ctx context.Context, m ffi.Memory, fd, how int32) syscall.Errno
 
 func SocketShutdown(fn ShutdownFn) ShutdownHostFn {
 	return func(
 		ctx context.Context, m ffi.Memory, fd, how int32,
 	) syscall.Errno {
-		return ffi.Errno(unix.Shutdown(int(fd), int(how)))
+		return ffi.Errno(fn(ctx, int(fd), int(how)))
 	}
 }
 
-func SocketAddrPort(
-	ctx context.Context,
+type AddrPortFn func(ctx context.Context, network string, service string) (int, error)
+type AddrPortHostFn func(ctx context.Context,
 	m ffi.Memory,
 	networkptr uintptr, networklen uint32,
 	serviceptr uintptr, servicelen uint32,
 	portptr uintptr,
-) syscall.Errno {
-	var (
-		err  error
-		port int
-	)
+) syscall.Errno
 
-	network, err := ffi.ReadString(m, networkptr, networklen)
-	if err != nil {
-		return ffi.Errno(err)
-	}
-	service, err := ffi.ReadString(m, serviceptr, servicelen)
-	if err != nil {
-		return ffi.Errno(err)
-	}
+func SocketAddrPort(portfn AddrPortFn) AddrPortHostFn {
+	return func(
+		ctx context.Context,
+		m ffi.Memory,
+		networkptr uintptr, networklen uint32,
+		serviceptr uintptr, servicelen uint32,
+		portptr uintptr,
+	) syscall.Errno {
+		var (
+			err  error
+			port int
+		)
 
-	if port, err = net.DefaultResolver.LookupPort(ctx, network, service); err != nil {
-		return ffi.Errno(err)
-	}
+		network, err := ffi.ReadString(m, networkptr, networklen)
+		if err != nil {
+			return ffi.Errno(err)
+		}
+		service, err := ffi.ReadString(m, serviceptr, servicelen)
+		if err != nil {
+			return ffi.Errno(err)
+		}
 
-	return ffi.Errno(ffi.Uint32Write(m, portptr, uint32(port)))
+		if port, err = portfn(ctx, network, service); err != nil {
+			return ffi.Errno(err)
+		}
+
+		return ffi.Errno(ffi.Uint32Write(m, portptr, uint32(port)))
+	}
 }
 
-func SocketAddrIP(
+type AddrIPFn func(ctx context.Context, network string, address string) ([]net.IP, error)
+type AddrIPHostFn func(
 	ctx context.Context,
 	m ffi.Memory,
 	networkptr uintptr, networklen uint32,
 	addressptr uintptr, addresslen uint32,
 	ipres uintptr, maxResLen uint32,
 	ipreslen uintptr,
-) syscall.Errno {
-	var (
-		err error
-		ip  []net.IP
-		buf []byte
-	)
-	network, err := ffi.ReadString(m, networkptr, networklen)
-	if err != nil {
-		return ffi.Errno(err)
-	}
-	address, err := ffi.ReadString(m, addressptr, addresslen)
-	if err != nil {
-		return ffi.Errno(err)
-	}
+) syscall.Errno
 
-	if ip, err = net.DefaultResolver.LookupIP(ctx, network, address); err != nil {
-		log.Println("socket ip lookup failed", err)
-		return syscall.EINVAL
-	}
+func SocketAddrIP(fn AddrIPFn) AddrIPHostFn {
+	return func(
+		ctx context.Context,
+		m ffi.Memory,
+		networkptr uintptr, networklen uint32,
+		addressptr uintptr, addresslen uint32,
+		ipres uintptr, maxResLen uint32,
+		ipreslen uintptr,
+	) syscall.Errno {
+		var (
+			err error
+			ip  []net.IP
+			buf []byte
+		)
+		network, err := ffi.ReadString(m, networkptr, networklen)
+		if err != nil {
+			return ffi.Errno(err)
+		}
+		address, err := ffi.ReadString(m, addressptr, addresslen)
+		if err != nil {
+			return ffi.Errno(err)
+		}
 
-	reslength := len(ip)
-	if reslength*net.IPv6len > int(maxResLen) {
-		reslength = int(maxResLen / net.IPv6len)
-	}
+		// if ip, err = net.DefaultResolver.LookupIP(ctx, network, address); err != nil {
+		// 	log.Println("socket ip lookup failed", err)
+		// 	return syscall.EINVAL
+		// }
 
-	buf = make([]byte, 0, maxResLen)
-	for _, i := range ip[:reslength] {
-		buf = append(buf, i.To16()...)
-	}
+		if ip, err = fn(ctx, network, address); err != nil {
+			log.Println("socket ip lookup failed", err)
+			return syscall.EINVAL
+		}
 
-	if err = ffi.BytesWrite(m, buf, ipres, maxResLen); err != nil {
-		return ffi.Errno(err)
-	}
+		reslength := len(ip)
+		if reslength*net.IPv6len > int(maxResLen) {
+			reslength = int(maxResLen / net.IPv6len)
+		}
 
-	return ffi.Errno(ffi.Uint32Write(m, ipreslen, uint32(len(buf))))
+		buf = make([]byte, 0, maxResLen)
+		for _, i := range ip[:reslength] {
+			buf = append(buf, i.To16()...)
+		}
+
+		if err = ffi.BytesWrite(m, buf, ipres, maxResLen); err != nil {
+			return ffi.Errno(err)
+		}
+
+		return ffi.Errno(ffi.Uint32Write(m, ipreslen, uint32(len(buf))))
+	}
 }

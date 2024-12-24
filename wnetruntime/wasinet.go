@@ -4,8 +4,13 @@ package wnetruntime
 
 import (
 	"context"
+	"net"
 	"net/netip"
+	"syscall"
+	"unsafe"
 
+	"github.com/egdaemon/wasinet/ffi"
+	"github.com/egdaemon/wasinet/ffiguest"
 	"github.com/egdaemon/wasinet/internal/langx"
 	"golang.org/x/sys/unix"
 )
@@ -42,8 +47,8 @@ type network struct {
 	allow []netip.Prefix
 }
 
-func (t network) Open(ctx context.Context, af, utype, protocol int) (int, error) {
-	return unix.Socket(af, utype, protocol)
+func (t network) Open(ctx context.Context, af, socktype, protocol int) (fd int, err error) {
+	return unix.Socket(af, socktype, protocol)
 }
 
 func (t network) Bind(ctx context.Context, fd int, sa unix.Sockaddr) error {
@@ -66,17 +71,38 @@ func (t network) PeerAddr(ctx context.Context, fd int) (unix.Sockaddr, error) {
 	return unix.Getpeername(fd)
 }
 
-func (t network) SetSocketOption() {
-
+func (t network) SetSocketOption(ctx context.Context, fd int, level, name int, value []byte) error {
+	switch name {
+	case syscall.SO_LINGER: // this is untested.
+		v := ffiguest.RawRead[unix.Timeval](unsafe.Pointer(&value), uintptr(len(value)))
+		return unix.SetsockoptTimeval(fd, level, name, v)
+	case syscall.SO_BINDTODEVICE: // this is untested.
+		return ffi.Errno(unix.SetsockoptString(fd, level, name, string(value)))
+	default:
+		value := ffiguest.ReadUint32(unsafe.Pointer(&value), uintptr(len(value)))
+		return ffi.Errno(unix.SetsockoptInt(fd, level, name, int(value)))
+	}
 }
 
-func (t network) GetSocketOption() {
-
+func (t network) GetSocketOption(ctx context.Context, fd int, level, name int, value []byte) (any, error) {
+	switch name {
+	case syscall.SO_LINGER:
+		return unix.Timeval{}, syscall.ENOTSUP
+	case syscall.SO_BINDTODEVICE:
+		return "", syscall.ENOTSUP
+	default:
+		return unix.GetsockoptInt(int(fd), int(level), int(name))
+	}
 }
 
-func (t network) Shutdown() {
-
+func (t network) Shutdown(ctx context.Context, fd, how int) error {
+	return unix.Shutdown(fd, how)
 }
 
-func (t network) AddrIP()   {}
-func (t network) AddrPort() {}
+func (t network) AddrIP(ctx context.Context, network string, address string) ([]net.IP, error) {
+	return net.DefaultResolver.LookupIP(ctx, network, address)
+}
+
+func (t network) AddrPort(ctx context.Context, network string, service string) (int, error) {
+	return net.DefaultResolver.LookupPort(ctx, network, service)
+}
