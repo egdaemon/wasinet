@@ -1,6 +1,6 @@
 //go:build !wasip1
 
-package wasinetruntime
+package wnetruntime
 
 import (
 	"context"

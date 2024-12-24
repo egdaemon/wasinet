@@ -1,4 +1,4 @@
-//go:build unix
+//go:build !wasip1
 
 package wasinet
 
