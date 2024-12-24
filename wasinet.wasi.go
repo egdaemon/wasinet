@@ -67,7 +67,7 @@ func sock_send_to(
 //go:wasmimport wasinet_v0 sock_shutdown
 func sock_shutdown(fd, how int32) syscall.Errno
 
-//go:wasmimport wasinet_v0 sock_getaddrport
+//go:wasmimport wasinet_v0 sock_getaddrip
 //go:noescape
 func sock_getaddrip(
 	networkptr unsafe.Pointer, networklen uint32,
