@@ -31,7 +31,6 @@ func (t udpaddr) Addr() net.Addr {
 func listentcp(t testing.TB, network, address string) net.Listener {
 	li, err := wasinet.Listen(network, address)
 	if err != nil {
-		log.Println("checkpoint")
 		t.Fatal(err)
 	}
 
