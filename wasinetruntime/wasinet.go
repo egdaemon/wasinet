@@ -42,8 +42,8 @@ type network struct {
 	allow []netip.Prefix
 }
 
-func (t network) Open(ctx context.Context, domain, utype, protocol int) (int, error) {
-	return unix.Socket(domain, utype, protocol)
+func (t network) Open(ctx context.Context, af, utype, protocol int) (int, error) {
+	return unix.Socket(af, utype, protocol)
 }
 
 func (t network) Bind(ctx context.Context, fd int, sa unix.Sockaddr) error {

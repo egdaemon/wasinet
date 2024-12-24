@@ -18,9 +18,9 @@ import (
 
 // The native implementation ensure the api interopt is correct.
 
-func unixsockaddr(addr unsafe.Pointer, addrLen uintptr) (sa unix.Sockaddr, err error) {
-	v := ffiguest.RawRead[rawSockaddrAny](addr, addrLen)
-	wsa, err := anyToSockaddr(&v)
+func unixsockaddr(v *rawSockaddrAny) (sa unix.Sockaddr, err error) {
+	// v := ffiguest.RawRead[rawSockaddrAny](addr, addrLen)
+	wsa, err := anyToSockaddr(v)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func sock_open(af int32, socktype int32, proto int32, fd unsafe.Pointer) syscall
 }
 
 func sock_bind(fd int32, addr unsafe.Pointer, addrlen uintptr) syscall.Errno {
-	wsa, err := unixsockaddr(addr, addrlen)
+	wsa, err := unixsockaddr(ffiguest.RawRead[rawSockaddrAny](addr, addrlen))
 	if err != nil {
 		return ffi.Errno(err)
 	}
@@ -81,7 +81,7 @@ func sock_listen(fd int32, backlog int32) syscall.Errno {
 }
 
 func sock_connect(fd int32, addr unsafe.Pointer, addrlen uintptr) syscall.Errno {
-	wsa, err := unixsockaddr(addr, addrlen)
+	wsa, err := unixsockaddr(ffiguest.RawRead[rawSockaddrAny](addr, addrlen))
 	if err != nil {
 		return ffi.Errno(err)
 	}
@@ -101,7 +101,7 @@ func sock_setsockopt(fd int32, level uint32, name uint32, valueptr unsafe.Pointe
 	switch name {
 	case syscall.SO_LINGER: // this is untested.
 		value := ffiguest.RawRead[unix.Timeval](valueptr, valueLen)
-		return ffi.Errno(unix.SetsockoptTimeval(int(fd), int(level), int(name), &value))
+		return ffi.Errno(unix.SetsockoptTimeval(int(fd), int(level), int(name), value))
 	case syscall.SO_BINDTODEVICE: // this is untested.
 		value := ffiguest.StringRead(valueptr, uint32(valueLen))
 		return ffi.Errno(unix.SetsockoptString(int(fd), int(level), int(name), value))

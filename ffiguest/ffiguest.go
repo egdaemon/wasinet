@@ -75,6 +75,6 @@ func Raw[T any](s *T) (unsafe.Pointer, uintptr) {
 	return unsafe.Pointer(s), unsafe.Sizeof(*s)
 }
 
-func RawRead[T any](ptr unsafe.Pointer, dlen uintptr) T {
-	return *(*T)(ptr)
+func RawRead[T any](ptr unsafe.Pointer, dlen uintptr) *T {
+	return (*T)(ptr)
 }

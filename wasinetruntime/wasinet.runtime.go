@@ -6,48 +6,47 @@ import (
 	"context"
 	"log"
 	"syscall"
+	"unsafe"
 
 	"github.com/egdaemon/wasinet/ffi"
 	"golang.org/x/sys/unix"
 )
 
-type OpenFn func(ctx context.Context, domain, utype, protocol int) (int32, uint32)
-type OpenHostFn func(ctx context.Context, m ffi.Memory, domain int32, proto int32, fd uintptr) uint32
+type OpenFn func(ctx context.Context, af, socktype, protocol int32) (int32, syscall.Errno)
+type OpenHostFn func(ctx context.Context, m ffi.Memory, af int32, socktype int32, proto int32, fd uintptr) syscall.Errno
 
 func Open(open OpenFn) OpenHostFn {
 	return func(
 		ctx context.Context,
 		m ffi.Memory,
-		domain int32,
-		proto int32,
-		fd uintptr,
-	) uint32 {
-		log.Println("socket_open", domain, proto)
-		_fd, errno := open(ctx, int(domain), 0, int(proto))
+		af int32, socktype int32, proto int32, fd uintptr,
+	) syscall.Errno {
+		_fd, errno := open(ctx, af, socktype, proto)
 		if errno != 0 {
 			return errno
 		}
 
 		if !m.WriteUint32Le(uint32(fd), uint32(_fd)) {
-			return uint32(syscall.EFAULT)
+			return syscall.EFAULT
 		}
 
-		return uint32(ffi.ErrnoSuccess())
+		return ffi.Errno(errno)
 	}
 }
 
 type BindFn func(ctx context.Context, fd int, sa unix.Sockaddr) error
-type BindHostFn func(ctx context.Context, m ffi.Memory, fd int32, addr uintptr, addrlen uint32) uint32
+type BindHostFn func(ctx context.Context, m ffi.Memory, fd int32, addr unsafe.Pointer, addrlen uint32) uint32
 
 func Bind(bind BindFn) BindHostFn {
 	return func(
 		ctx context.Context,
 		m ffi.Memory,
 		fd int32,
-		addr uintptr,
+		addr unsafe.Pointer,
 		addrlen uint32,
 	) uint32 {
 		log.Println("socket_bind", addrlen)
+
 		return uint32(syscall.ENOTSUP)
 	}
 }

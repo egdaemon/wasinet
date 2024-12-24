@@ -1,6 +1,8 @@
 package wasinet
 
-import "net"
+import (
+	"net"
+)
 
 // hijack the net.DefaultResolver
 func Hijack() {
