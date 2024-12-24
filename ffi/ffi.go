@@ -123,5 +123,9 @@ func RawWrite[T any](m Memory, v T, dst uintptr, dlen uint32) error {
 }
 
 func BytesWrite(m Memory, v []byte, dst uintptr, dlen uint32) error {
+	if !m.Write(uint32(dst), v) {
+		return syscall.EFAULT
+	}
+
 	return nil
 }
