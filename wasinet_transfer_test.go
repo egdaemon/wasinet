@@ -5,8 +5,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/egdaemon/wasinet"
 	"github.com/egdaemon/wasinet/internal/testx"
-	"github.com/egdaemon/wasinet/wasinet"
 
 	"github.com/stretchr/testify/assert"
 )

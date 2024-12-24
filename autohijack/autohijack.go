@@ -2,7 +2,7 @@
 
 package autohijack
 
-import "github.com/egdaemon/wasinet/wasinet"
+import "github.com/egdaemon/wasinet"
 
 func init() {
 	wasinet.Hijack()
