@@ -36,14 +36,10 @@ effort based on the internal api's they expose.
 package main
 
 import (
-    "github.com/egdaemon/wasinet/wasinet"
+    "github.com/egdaemon/wasinet/autohijack"
 )
 
 func main() {
-    // we believe that func init() hijacking of global infrastructure is
-    // in poor taste for a library. therefore you need to call hijack.
-    wasinet.Hijack()
-
     http.Get("https://www.google.com")
 }
 ```
@@ -52,7 +48,7 @@ func main() {
 package example
 
 import (
-    "github.com/egdaemon/wasinet/wasinetruntime"
+    "github.com/egdaemon/wasinet/wnetruntime"
 )
 
 func Wazero(host wazero.HostModuleBuilder) wazero.HostModuleBuilder {
