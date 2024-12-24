@@ -33,11 +33,11 @@ func sock_setsockopt(fd int32, level uint32, name uint32, value unsafe.Pointer, 
 
 //go:wasmimport wasinet_v0 sock_getlocaladdr
 //go:noescape
-func sock_getlocaladdr(fd int32, addr unsafe.Pointer) syscall.Errno
+func sock_getlocaladdr(fd int32, addr unsafe.Pointer, addrlen uint32) syscall.Errno
 
 //go:wasmimport wasinet_v0 sock_getpeeraddr
 //go:noescape
-func sock_getpeeraddr(fd int32, addr unsafe.Pointer) syscall.Errno
+func sock_getpeeraddr(fd int32, addr unsafe.Pointer, addrlen uint32) syscall.Errno
 
 //go:wasmimport wasinet_v0 sock_recv_from
 //go:noescape

@@ -120,7 +120,7 @@ func setsockopt(fd, level, opt int, value int) error {
 
 func getsockname(fd int) (sa sockaddr, err error) {
 	var rsa rawSockaddrAny
-	errno := sock_getlocaladdr(int32(fd), unsafe.Pointer(&rsa))
+	errno := sock_getlocaladdr(int32(fd), unsafe.Pointer(&rsa), uint32(unsafe.Sizeof(rsa)))
 	if errno != 0 {
 		return nil, errno
 	}
@@ -129,7 +129,7 @@ func getsockname(fd int) (sa sockaddr, err error) {
 
 func getpeername(fd int) (sockaddr, error) {
 	var rsa rawSockaddrAny
-	errno := sock_getpeeraddr(int32(fd), unsafe.Pointer(&rsa))
+	errno := sock_getpeeraddr(int32(fd), unsafe.Pointer(&rsa), uint32(unsafe.Sizeof(rsa)))
 	if errno != 0 {
 		return nil, errno
 	}
