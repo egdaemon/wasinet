@@ -32,6 +32,8 @@ func SocketOpen(open OpenFn) OpenHostFn {
 		m ffi.Memory,
 		af uint32, socktype uint32, proto uint32, fd uintptr,
 	) syscall.Errno {
+		log.Println("socket open initated")
+		defer log.Println("socket open completed")
 		_fd, errno := open(ctx, int(af), int(socktype), int(proto))
 		if !m.WriteUint32Le(uint32(fd), uint32(_fd)) {
 			return syscall.EFAULT
@@ -52,6 +54,8 @@ func SocketBind(bind BindFn) BindHostFn {
 		addr uintptr,
 		addrlen uint32,
 	) syscall.Errno {
+		log.Println("socket bind initated")
+		defer log.Println("socket bind completed")
 		sa, err := readsockaddr(m, addr, addrlen)
 		if err != nil {
 			return ffi.Errno(err)
@@ -71,6 +75,8 @@ func SocketConnect(fn ConnectFn) ConnectHostFn {
 		addr uintptr,
 		addrlen uint32,
 	) syscall.Errno {
+		log.Println("socket connect initated")
+		defer log.Println("socket connect completed")
 		sa, err := readsockaddr(m, addr, addrlen)
 		if err != nil {
 			return ffi.Errno(err)
@@ -114,6 +120,9 @@ func SocketSendTo(fn SendToFn) SendToHostFn {
 		flags int32,
 		nwritten uintptr,
 	) syscall.Errno {
+		log.Println("socket send_to initated")
+		defer log.Println("socket send_to completed")
+
 		vecs, err := ffi.ReadSlice[[]byte](m, iovs, iovslen)
 		if err != nil {
 			return ffi.Errno(err)
@@ -159,7 +168,8 @@ func SocketRecvFrom(fn RecvFromFn) RecvFromHostFn {
 		nread uintptr,
 		oflags uintptr,
 	) syscall.Errno {
-
+		log.Println("socket recv_from initated")
+		defer log.Println("socket recv_from completed")
 		vecs, err := ffi.ReadSlice[[]byte](m, iovs, iovslen)
 		if err != nil {
 			return ffi.Errno(err)
@@ -205,6 +215,8 @@ func SocketSetOpt(fn SetOptFn) SetOptHostFn {
 		valueptr uintptr,
 		valuelen uint32,
 	) syscall.Errno {
+		log.Println("socket setopt initated")
+		defer log.Println("socket setopt completed")
 		value, err := ffi.BytesRead(m, valueptr, valuelen)
 		if err != nil {
 			return ffi.Errno(err)
@@ -227,6 +239,8 @@ func SocketGetOpt(fn GetOptFn) GetOptHostFn {
 		valueptr uintptr,
 		valuelen uint32,
 	) syscall.Errno {
+		log.Println("socket getopt initated")
+		defer log.Println("socket getopt completed")
 		value, err := ffi.BytesRead(m, valueptr, valuelen)
 		if err != nil {
 			return ffi.Errno(err)
@@ -256,6 +270,8 @@ func SocketLocalAddr(fn LocalAddrFn) LocalAddrHostFn {
 		addrptr uintptr,
 		addrlen uint32,
 	) syscall.Errno {
+		log.Println("socket localaddr initated")
+		defer log.Println("socket localaddr completed")
 		sa, err := unix.Getsockname(int(fd))
 		if err != nil {
 			return ffi.Errno(err)
@@ -279,6 +295,8 @@ func SocketPeerAddr(fn PeerAddrFn) PeerAddrHostFn {
 		addrptr uintptr,
 		addrlen uint32,
 	) syscall.Errno {
+		log.Println("socket peeraddr initated")
+		defer log.Println("socket peeraddr completed")
 		sa, err := unix.Getpeername(int(fd))
 		if err != nil {
 			return ffi.Errno(err)
@@ -298,6 +316,8 @@ func SocketShutdown(fn ShutdownFn) ShutdownHostFn {
 	return func(
 		ctx context.Context, m ffi.Memory, fd, how int32,
 	) syscall.Errno {
+		log.Println("socket shutdown initated")
+		defer log.Println("socket shutdown completed")
 		return ffi.Errno(fn(ctx, int(fd), int(how)))
 	}
 }
@@ -322,6 +342,9 @@ func SocketAddrPort(portfn AddrPortFn) AddrPortHostFn {
 			err  error
 			port int
 		)
+
+		log.Println("socket addrport initated")
+		defer log.Println("socket addport completed")
 
 		network, err := ffi.ReadString(m, networkptr, networklen)
 		if err != nil {
@@ -364,6 +387,10 @@ func SocketAddrIP(fn AddrIPFn) AddrIPHostFn {
 			ip  []net.IP
 			buf []byte
 		)
+
+		log.Println("socket addrip initated")
+		defer log.Println("socket addrip completed")
+
 		network, err := ffi.ReadString(m, networkptr, networklen)
 		if err != nil {
 			return ffi.Errno(err)
