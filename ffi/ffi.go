@@ -22,6 +22,14 @@ type Memory interface {
 	Write(offset uint32, v []byte) bool
 }
 
+func ReadSlice[T any](m Memory, ptr uintptr, dlen uint32) (zero []T, err error) {
+	if binary, ok := m.Read(uint32(ptr), dlen); !ok {
+		return zero, syscall.EFAULT
+	} else {
+		return unsafe.Slice((*T)(unsafe.Pointer(&binary[0])), dlen), nil
+	}
+}
+
 func ReadString(m Memory, offset uintptr, len uint32) (string, error) {
 	var (
 		ok   bool

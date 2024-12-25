@@ -106,3 +106,29 @@ func (t network) AddrIP(ctx context.Context, network string, address string) ([]
 func (t network) AddrPort(ctx context.Context, network string, service string) (int, error) {
 	return net.DefaultResolver.LookupPort(ctx, network, service)
 }
+
+func (t network) RecvFrom(ctx context.Context, fd int, vecs [][]byte, flags int) (int, int, unix.Sockaddr, error) {
+	for {
+		n, _, roflags, sa, err := unix.RecvmsgBuffers(fd, vecs, nil, flags)
+		switch err {
+		case nil:
+			return n, roflags, sa, nil
+		case syscall.EINTR, syscall.EWOULDBLOCK:
+			select {
+			case <-ctx.Done():
+				return 0, 0, nil, ctx.Err()
+			default:
+			}
+			continue
+		default:
+			return 0, 0, nil, err
+		}
+	}
+}
+
+func (t network) SendTo(ctx context.Context, fd int, sa unix.Sockaddr, vecs [][]byte, flags int) (int, error) {
+	// dispatch-run/wasi-go has linux special cased here.
+	// did not faithfully follow it because it might be caused by other complexity.
+	// https://github.com/dispatchrun/wasi-go/blob/038d5104aacbb966c25af43797473f03c5da3e4f/systems/unix/system.go#L640
+	return unix.SendmsgBuffers(int(fd), vecs, nil, sa, int(flags))
+}

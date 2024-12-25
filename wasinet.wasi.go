@@ -55,7 +55,7 @@ func sock_recv_from(
 func sock_send_to(
 	fd int32,
 	iovs unsafe.Pointer, iovslen uint32,
-	addr unsafe.Pointer,
+	addrptr unsafe.Pointer, _addrlen uint32,
 	flags int32,
 	nwritten unsafe.Pointer,
 ) syscall.Errno

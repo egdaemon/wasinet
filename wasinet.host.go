@@ -75,7 +75,7 @@ func SocketConnect(fn ConnectFn) ConnectHostFn {
 		if err != nil {
 			return ffi.Errno(err)
 		}
-		return ffi.Errno(unix.Connect(int(fd), sa))
+		return ffi.Errno(fn(ctx, int(fd), sa))
 	}
 }
 
@@ -89,17 +89,17 @@ func SocketListen(fn ListenFn) ListenHostFn {
 		fd int32,
 		backlog int32,
 	) syscall.Errno {
-		return ffi.Errno(unix.Listen(int(fd), int(backlog)))
+		return ffi.Errno(fn(ctx, int(fd), int(backlog)))
 	}
 }
 
-type SendToFn func(ctx context.Context, fd int, buf []byte, flags int, to unix.Sockaddr) (int, error)
+type SendToFn func(ctx context.Context, fd int, sa unix.Sockaddr, vecs [][]byte, flags int) (int, error)
 type SendToHostFn func(
 	ctx context.Context,
 	m ffi.Memory,
 	fd int32,
 	iovs uintptr, iovslen uint32,
-	addr uintptr,
+	addr uintptr, addrlen uint32,
 	flags int32,
 	nwritten uintptr,
 ) syscall.Errno
@@ -110,16 +110,33 @@ func SocketSendTo(fn SendToFn) SendToHostFn {
 		m ffi.Memory,
 		fd int32,
 		iovs uintptr, iovslen uint32,
-		addr uintptr,
+		addrptr uintptr, addrlen uint32,
 		flags int32,
 		nwritten uintptr,
 	) syscall.Errno {
-		log.Println("socket_send_to is not implemented")
-		return syscall.ENOTSUP
+		vecs, err := ffi.ReadSlice[[]byte](m, iovs, iovslen)
+		if err != nil {
+			return ffi.Errno(err)
+		}
+		sa, err := readsockaddr(m, addrptr, addrlen)
+		if err != nil {
+			return ffi.Errno(err)
+		}
+		log.Println("socket_send_to is not implemented", len(vecs), len(vecs[0]))
+		n, err := fn(ctx, int(fd), sa, vecs, int(flags))
+		if err != nil {
+			return ffi.Errno(err)
+		}
+
+		if err = ffi.Uint32Write(m, nwritten, uint32(n)); err != nil {
+			return ffi.Errno(err)
+		}
+
+		return ffi.ErrnoSuccess()
 	}
 }
 
-type RecvFromFn func(ctx context.Context, fd int, buf []byte, flags int, from unix.Sockaddr) (int, unix.Sockaddr, error)
+type RecvFromFn func(ctx context.Context, fd int, buf [][]byte, flags int) (int, int, unix.Sockaddr, error)
 type RecvFromHostFn func(
 	ctx context.Context,
 	m ffi.Memory,
@@ -142,8 +159,36 @@ func SocketRecvFrom(fn RecvFromFn) RecvFromHostFn {
 		nread uintptr,
 		oflags uintptr,
 	) syscall.Errno {
-		log.Println("socket_recv_from is not implemented")
-		return syscall.ENOTSUP
+
+		vecs, err := ffi.ReadSlice[[]byte](m, iovs, iovslen)
+		if err != nil {
+			return ffi.Errno(err)
+		}
+
+		log.Println("socket_recv_from is not implemented", len(vecs), len(vecs[0]))
+		n, roflags, sa, err := fn(ctx, int(fd), vecs, int(iflags))
+		if err != nil {
+			return ffi.Errno(err)
+		}
+
+		addr, err := unixsockaddrToRaw(sa)
+		if err != nil {
+			return ffi.Errno(err)
+		}
+
+		if err = ffi.RawWrite(m, addr, addrptr, 0); err != nil {
+			return ffi.Errno(err)
+		}
+
+		if err = ffi.Uint32Write(m, nread, uint32(n)); err != nil {
+			return ffi.Errno(err)
+		}
+
+		if err = ffi.Uint32Write(m, oflags, uint32(roflags)); err != nil {
+			return ffi.Errno(err)
+		}
+
+		return ffi.ErrnoSuccess()
 	}
 }
 

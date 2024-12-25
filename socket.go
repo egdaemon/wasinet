@@ -224,13 +224,13 @@ func recvfrom(fd int, iovs [][]byte, flags int32) (n int, addr rawsocketaddr, of
 
 func sendto(fd int, iovs [][]byte, addr rawsocketaddr, flags int32) (int, error) {
 	iovsptr, iovslen := ffiguest.SliceData(iovs)
-	addrptr, _ := ffiguest.Raw(&addr)
+	addrptr, addrlen := ffiguest.Raw(&addr)
 
 	nwritten := int(0)
 	errno := sock_send_to(
 		int32(fd),
 		iovsptr, iovslen,
-		addrptr,
+		addrptr, addrlen,
 		flags,
 		unsafe.Pointer(&nwritten),
 	)
