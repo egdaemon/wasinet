@@ -4,6 +4,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"testing"
 
@@ -72,4 +73,19 @@ func listenudp(t testing.TB, network, address string) addrconn {
 	})
 
 	return udpaddr{PacketConn: li}
+}
+
+func httpclient() http.Client {
+	dialer := &net.Dialer{
+		Resolver: &net.Resolver{
+			PreferGo: true,
+			Dial:     wasinet.DialContext,
+		},
+	}
+
+	return http.Client{
+		Transport: &http.Transport{
+			DialContext: dialer.DialContext,
+		},
+	}
 }
