@@ -162,7 +162,7 @@ func (s *sockipaddr[T]) sockaddr() *rawsocketaddr {
 	case sockip6:
 		raddr.family = syscall.AF_INET6
 	default:
-		log.Printf("WAAAAT %T\n", x)
+		log.Printf("unknown socket family %T\n", x)
 	}
 
 	copy(raddr.addr[:], buf)

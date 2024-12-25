@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"syscall"
@@ -106,6 +107,7 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	if err != nil {
 		return nil, os.NewSyscallError("socket", err)
 	}
+	log.Println("dialing", af, sotype, addr.String())
 	fd, err := socket(af, sotype, netaddrproto(addr))
 	if err != nil {
 		return nil, os.NewSyscallError("socket", err)

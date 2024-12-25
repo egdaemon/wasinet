@@ -32,7 +32,7 @@ func SocketOpen(open OpenFn) OpenHostFn {
 		m ffi.Memory,
 		af uint32, socktype uint32, proto uint32, fd uintptr,
 	) syscall.Errno {
-		log.Println("socket open initated")
+		log.Println("socket open initated", af, socktype, proto)
 		defer log.Println("socket open completed")
 		_fd, errno := open(ctx, int(af), int(socktype), int(proto))
 		if !m.WriteUint32Le(uint32(fd), uint32(_fd)) {
