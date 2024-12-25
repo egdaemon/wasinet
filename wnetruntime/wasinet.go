@@ -4,15 +4,21 @@ package wnetruntime
 
 import (
 	"context"
+	"log"
 	"net"
 	"net/netip"
 	"syscall"
 	"unsafe"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/egdaemon/wasinet/ffi"
-	"github.com/egdaemon/wasinet/ffiguest"
 	"github.com/egdaemon/wasinet/internal/langx"
 	"golang.org/x/sys/unix"
+)
+
+const (
+	WASI_AF_INET  = 2
+	WASI_AF_INET6 = 3
 )
 
 type IP interface {
@@ -74,12 +80,19 @@ func (t network) PeerAddr(ctx context.Context, fd int) (unix.Sockaddr, error) {
 func (t network) SetSocketOption(ctx context.Context, fd int, level, name int, value []byte) error {
 	switch name {
 	case syscall.SO_LINGER: // this is untested.
-		v := ffiguest.RawRead[unix.Timeval](unsafe.Pointer(&value))
+		v := &unix.Timeval{}
+		tvptr, tvlen := ffi.Pointer(v)
+		if err := ffi.RawRead(ffi.Native{}, tvptr, unsafe.Pointer(&value), tvlen); err != nil {
+			return ffi.Errno(err)
+		}
 		return unix.SetsockoptTimeval(fd, level, name, v)
 	case syscall.SO_BINDTODEVICE: // this is untested.
 		return ffi.Errno(unix.SetsockoptString(fd, level, name, string(value)))
 	default:
-		value := ffiguest.ReadUint32(unsafe.Pointer(&value), uint32(len(value)))
+		value, err := ffi.Uint32Read(ffi.Native{}, unsafe.Pointer(&value), uint32(len(value)))
+		if err != nil {
+			return ffi.Errno(err)
+		}
 		return ffi.Errno(unix.SetsockoptInt(fd, level, name, int(value)))
 	}
 }
@@ -127,6 +140,7 @@ func (t network) RecvFrom(ctx context.Context, fd int, vecs [][]byte, flags int)
 }
 
 func (t network) SendTo(ctx context.Context, fd int, sa unix.Sockaddr, vecs [][]byte, flags int) (int, error) {
+	log.Println("SendTo", fd, flags, spew.Sdump(sa), spew.Sdump(vecs))
 	// dispatch-run/wasi-go has linux special cased here.
 	// did not faithfully follow it because it might be caused by other complexity.
 	// https://github.com/dispatchrun/wasi-go/blob/038d5104aacbb966c25af43797473f03c5da3e4f/systems/unix/system.go#L640
