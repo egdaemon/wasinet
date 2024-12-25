@@ -4,14 +4,13 @@ package wnetruntime
 
 import (
 	"context"
-	"log"
 	"net"
 	"net/netip"
 	"syscall"
 	"unsafe"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/egdaemon/wasinet/ffi"
+	"github.com/egdaemon/wasinet/internal/errorsx"
 	"github.com/egdaemon/wasinet/internal/langx"
 	"golang.org/x/sys/unix"
 )
@@ -54,26 +53,32 @@ type network struct {
 }
 
 func (t network) Open(ctx context.Context, af, socktype, protocol int) (fd int, err error) {
+	// log.Println("sock_open", af, socktype, protocol)
 	return unix.Socket(af, socktype, protocol)
 }
 
 func (t network) Bind(ctx context.Context, fd int, sa unix.Sockaddr) error {
+	// log.Println("sock_bind", fd, sa)
 	return unix.Bind(fd, sa)
 }
 
 func (t network) Connect(ctx context.Context, fd int, sa unix.Sockaddr) error {
+	// log.Println("sock_connect", fd, sa)
 	return unix.Connect(fd, sa)
 }
 
 func (t network) Listen(ctx context.Context, fd, backlog int) error {
+	// log.Println("sock_listen", fd, backlog)
 	return unix.Listen(fd, backlog)
 }
 
 func (t network) LocalAddr(ctx context.Context, fd int) (unix.Sockaddr, error) {
+	// log.Println("sock_localaddr", fd)
 	return unix.Getsockname(fd)
 }
 
 func (t network) PeerAddr(ctx context.Context, fd int) (unix.Sockaddr, error) {
+	// log.Println("sock_peeraddr", fd)
 	return unix.Getpeername(fd)
 }
 
@@ -82,17 +87,16 @@ func (t network) SetSocketOption(ctx context.Context, fd int, level, name int, v
 	case syscall.SO_LINGER: // this is untested.
 		v := &unix.Timeval{}
 		tvptr, tvlen := ffi.Pointer(v)
-		if err := ffi.RawRead(ffi.Native{}, tvptr, unsafe.Pointer(&value), tvlen); err != nil {
+		if err := ffi.RawRead(ffi.Native{}, ffi.Native{}, tvptr, unsafe.Pointer(&value), tvlen); err != nil {
 			return ffi.Errno(err)
 		}
 		return unix.SetsockoptTimeval(fd, level, name, v)
 	case syscall.SO_BINDTODEVICE: // this is untested.
 		return ffi.Errno(unix.SetsockoptString(fd, level, name, string(value)))
 	default:
-		value, err := ffi.Uint32Read(ffi.Native{}, unsafe.Pointer(&value), uint32(len(value)))
-		if err != nil {
-			return ffi.Errno(err)
-		}
+		valueptr, valueptrlen := ffi.Slice(value)
+		value := errorsx.Must(ffi.Uint32Read(ffi.Native{}, valueptr, valueptrlen))
+		// log.Println("sock_setsockopt", fd, level, name, value)
 		return ffi.Errno(unix.SetsockoptInt(fd, level, name, int(value)))
 	}
 }
@@ -113,34 +117,38 @@ func (t network) Shutdown(ctx context.Context, fd, how int) error {
 }
 
 func (t network) AddrIP(ctx context.Context, network string, address string) ([]net.IP, error) {
+	// log.Println("sock_getaddrip", network, address)
 	return net.DefaultResolver.LookupIP(ctx, network, address)
 }
 
 func (t network) AddrPort(ctx context.Context, network string, service string) (int, error) {
+	// log.Println("sock_getaddrport", network, service)
 	return net.DefaultResolver.LookupPort(ctx, network, service)
 }
 
 func (t network) RecvFrom(ctx context.Context, fd int, vecs [][]byte, flags int) (int, int, unix.Sockaddr, error) {
 	for {
+		// log.Println("recvMsgBuffers", fd, flags)
 		n, _, roflags, sa, err := unix.RecvmsgBuffers(fd, vecs, nil, flags)
-		switch err {
-		case nil:
+		if err == nil {
 			return n, roflags, sa, nil
+		}
+
+		switch err {
 		case syscall.EINTR, syscall.EWOULDBLOCK:
-			select {
-			case <-ctx.Done():
-				return 0, 0, nil, ctx.Err()
-			default:
-			}
-			continue
 		default:
-			return 0, 0, nil, err
+			return n, roflags, sa, err
+		}
+
+		select {
+		case <-ctx.Done():
+			return n, roflags, sa, ctx.Err()
+		default:
 		}
 	}
 }
 
 func (t network) SendTo(ctx context.Context, fd int, sa unix.Sockaddr, vecs [][]byte, flags int) (int, error) {
-	log.Println("SendTo", fd, flags, spew.Sdump(sa), spew.Sdump(vecs))
 	// dispatch-run/wasi-go has linux special cased here.
 	// did not faithfully follow it because it might be caused by other complexity.
 	// https://github.com/dispatchrun/wasi-go/blob/038d5104aacbb966c25af43797473f03c5da3e4f/systems/unix/system.go#L640

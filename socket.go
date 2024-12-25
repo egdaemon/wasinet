@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/egdaemon/wasinet/ffi"
 	"github.com/egdaemon/wasinet/internal/errorsx"
 )
@@ -34,13 +33,11 @@ func lookupAddr(_ context.Context, op, network, address string) ([]net.Addr, err
 
 	port, err := resolveport(network, service)
 	if err != nil {
-
 		return nil, os.NewSyscallError("resolveport", err)
 	}
 
 	ips, err := resolveaddrip(op, network, hostname)
 	if err != nil {
-
 		return nil, os.NewSyscallError("resolveaddrip", err)
 	}
 
@@ -56,12 +53,13 @@ func lookupAddr(_ context.Context, op, network, address string) ([]net.Addr, err
 			IsNotFound: true,
 		}
 	}
-
+	log.Println("resolved", network, address, addrs)
 	return addrs, nil
 }
 
 func socket(af, sotype, proto int) (fd int, err error) {
 	var newfd int32 = -1
+	log.Println("socket", af, sotype, proto)
 	errno := sock_open(int32(af), int32(sotype), int32(proto), unsafe.Pointer(&newfd))
 	if errno != 0 {
 		return -1, errno
@@ -126,15 +124,12 @@ func setsockopt(fd, level, opt int, value int) error {
 func getsockname(fd int) (sa sockaddr, err error) {
 	var rsa rawsocketaddr
 	rsaptr, rsalength := ffi.Pointer(&rsa)
-	log.Println("-------- init ----------")
 	errno := sock_getlocaladdr(int32(fd), rsaptr, rsalength)
 	if errno != 0 {
 		return nil, errno
 	}
 
-	log.Println("DERP DERP", rsa)
-	log.Println("-------- complete ----------")
-	return rawtosockaddr(&rsa, 1)
+	return rawtosockaddr(&rsa)
 }
 
 func getpeername(fd int) (sockaddr, error) {
@@ -145,9 +140,8 @@ func getpeername(fd int) (sockaddr, error) {
 	if errno != 0 {
 		return nil, errno
 	}
-	// rsa.family = uint16(sock_determine_host_af_family(int32(rsa.family)))
-	// log.Println("getpeername family", rsa.family)
-	return rawtosockaddr(&rsa, 2)
+
+	return rawtosockaddr(&rsa)
 }
 
 type sockaddr interface {
@@ -162,8 +156,6 @@ type sockipaddr[T any] struct {
 func (s sockipaddr[T]) sockaddr() rawsocketaddr {
 	ptr, plen := ffi.Pointer(&s)
 	buf := errorsx.Must(ffi.ReadSlice[byte](ffi.Native{}, ptr, plen))
-
-	log.Println("WAKA", buf, spew.Sdump(s))
 	raddr := rawsocketaddr{}
 
 	switch x := any(s.addr).(type) {
@@ -178,10 +170,6 @@ func (s sockipaddr[T]) sockaddr() rawsocketaddr {
 
 	copy(raddr.addr[:], buf)
 	return raddr
-}
-
-func (s *sockipaddr[T]) sockport() uint {
-	return uint(s.port)
 }
 
 type sockip4 struct {
@@ -208,22 +196,20 @@ func (s *sockaddrUnix) sockaddr() rawsocketaddr {
 	return raddr
 }
 
-func (s *sockaddrUnix) sockport() uint {
-	return 0
-}
-
 type rawsocketaddr struct {
 	family uint16
 	addr   [126]byte
 }
 
 func recvfrom(fd int, iovs [][]byte, flags int32) (n int, addr rawsocketaddr, oflags int32, err error) {
-	iovsptr, iovslen := ffi.Slice(iovs)
-	addrptr, _ := ffi.Pointer(&addr)
+	vecs := ffi.SliceVector(iovs...)
+	iovsptr, iovslen := ffi.Slice(vecs)
+	addrptr, addrlen := ffi.Pointer(&addr)
+
 	errno := sock_recv_from(
 		int32(fd),
 		iovsptr, iovslen,
-		addrptr,
+		addrptr, addrlen,
 		flags,
 		unsafe.Pointer(&n),
 		unsafe.Pointer(&oflags),
