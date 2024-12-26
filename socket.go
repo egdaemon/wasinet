@@ -53,13 +53,13 @@ func lookupAddr(_ context.Context, op, network, address string) ([]net.Addr, err
 			IsNotFound: true,
 		}
 	}
-	log.Println("resolved", network, address, addrs)
+
 	return addrs, nil
 }
 
 func socket(af, sotype, proto int) (fd int, err error) {
 	var newfd int32 = -1
-	log.Println("socket", af, sotype, proto)
+	// log.Println("socket", af, sotype, proto)
 	errno := sock_open(int32(af), int32(sotype), int32(proto), unsafe.Pointer(&newfd))
 	if errno != 0 {
 		return -1, errno
