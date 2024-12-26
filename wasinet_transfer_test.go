@@ -93,4 +93,7 @@ func TestTransferHTTPExternal(t *testing.T) {
 	rsp, err := c.Get("http://google.com")
 	require.NoError(t, err, "expected request to succeed")
 	require.Equal(t, rsp.StatusCode, http.StatusOK)
+	bdy, err := io.ReadAll(rsp.Body)
+	require.NoError(t, err, "expected request to read body")
+	log.Println("DRP", string(bdy))
 }

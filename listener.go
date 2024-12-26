@@ -319,7 +319,7 @@ func (c *packetConn) ReadMsgUDPAddrPort(b, oob []byte) (n, oobn, flags int, addr
 }
 
 func (c *packetConn) Write(b []byte) (int, error) {
-	return c.file.Write(b)
+	return c.WriteTo(b, c.raddr)
 }
 
 func (c *packetConn) WriteTo(b []byte, addr net.Addr) (int, error) {
@@ -347,7 +347,7 @@ func (c *packetConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 func (c *packetConn) WriteMsgUnix(b, oob []byte, addr *net.UnixAddr) (n, oobn int, err error) {
 	werr := c.conn.Write(func(fd uintptr) (done bool) {
 		raw := (&sockaddrUnix{name: addr.Name}).sockaddr()
-		n, err = sendto(int(fd), [][]byte{b}, *raw, 0)
+		n, err = sendto(int(fd), [][]byte{b}, raw, 0)
 		return err != syscall.EAGAIN
 	})
 	return n, oobn, errorsx.Compact(werr, err)
@@ -359,11 +359,11 @@ func (c *packetConn) WriteMsgUDP(b, oob []byte, addr *net.UDPAddr) (n, oobn int,
 
 func (c *packetConn) WriteMsgUDPAddrPort(b, oob []byte, addrPort netip.AddrPort) (n, oobn int, err error) {
 	rawConnErr := c.conn.Write(func(fd uintptr) (done bool) {
-		var raw *rawsocketaddr
+		var raw rawsocketaddr
 		if raw, err = netipaddrportToRaw(addrPort); err != nil {
 			return false
 		}
-		n, err = sendto(int(fd), [][]byte{b}, *raw, 0)
+		n, err = sendto(int(fd), [][]byte{b}, raw, 0)
 		return err != syscall.EAGAIN
 	})
 	if rawConnErr != nil {

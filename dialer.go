@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"syscall"
@@ -107,7 +106,7 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	if err != nil {
 		return nil, os.NewSyscallError("socket", err)
 	}
-	log.Println("dialing", af, sotype, addr.String())
+
 	fd, err := socket(af, sotype, netaddrproto(addr))
 	if err != nil {
 		return nil, os.NewSyscallError("socket", err)
@@ -118,9 +117,6 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 		}
 	}()
 
-	if err := setNonBlock(fd); err != nil {
-		return nil, err
-	}
 	if sotype == syscall.SOCK_DGRAM && af != syscall.AF_UNIX {
 		if err := setsockopt(fd, SOL_SOCKET, SO_BROADCAST, 1); err != nil {
 			// If the system does not support broadcast we should still be able
@@ -138,6 +134,7 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	if err != nil {
 		return nil, os.NewSyscallError("sockaddr", err)
 	}
+
 	var inProgress bool
 	switch err := connect(fd, connectAddr); err {
 	case nil:
@@ -222,5 +219,6 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("net.FileConn: %w", err)
 	}
+
 	return makeConn(c)
 }

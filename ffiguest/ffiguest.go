@@ -88,6 +88,20 @@ func Raw[T any](s *T) (unsafe.Pointer, uint32) {
 	return unsafe.Pointer(s), uint32(unsafe.Sizeof(*s))
 }
 
-func RawRead[T any](ptr unsafe.Pointer) *T {
-	return (*T)(ptr)
+func RawRead[T any](ptr unsafe.Pointer) T {
+	return *(*T)(ptr)
+}
+
+type Vector struct {
+	Offset unsafe.Pointer
+	Length uint32
+}
+
+func ReadVector[T any](eles ...Vector) [][]T {
+	r := make([][]T, 0, len(eles))
+	for _, v := range eles {
+		r = append(r, SliceDataRead[T](v.Offset, v.Length))
+	}
+
+	return r
 }
