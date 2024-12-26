@@ -3,8 +3,8 @@ package ffi_test
 import (
 	"testing"
 
-	"github.com/egdaemon/wasinet/ffi"
-	"github.com/egdaemon/wasinet/internal/bytesx"
+	"github.com/egdaemon/wasinet/wasinet/ffi"
+	"github.com/egdaemon/wasinet/wasinet/internal/bytesx"
 	"github.com/stretchr/testify/require"
 )
 

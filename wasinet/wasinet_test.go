@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/egdaemon/wasinet"
+	"github.com/egdaemon/wasinet/wasinet"
 )
 
 func TestMain(m *testing.M) {

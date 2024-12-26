@@ -3,7 +3,7 @@ package wasinet_test
 import (
 	"testing"
 
-	"github.com/egdaemon/wasinet"
+	"github.com/egdaemon/wasinet/wasinet"
 )
 
 func checkListen(t *testing.T, network, address string) {
