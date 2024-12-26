@@ -50,7 +50,7 @@ import (
 	"context"
 
 	"github.com/egdaemon/wasinet/wasinet/wnetruntime"
-	"github.com/egdaemon/wasinet/wasinet/wazeronet"
+	"github.com/egdaemon/wasinet/wazeronet"
 )
 
 func Wazero(runtime wazero.Runtime) wazero.HostModuleBuilder {
