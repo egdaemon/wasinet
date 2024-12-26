@@ -14,6 +14,9 @@ these issues will be resolved if people provide written tests to the repository 
 - we'd take PRs that fix the interopt with the wider ecosystem as well, its just the authors opinion that currently its not worth the
 effort based on the internal api's they expose.
 
+### commercial licensing available
+we understand many companies avoid GPLv3 licenses, feel free to reach out to [us](mailto:engineering@egdaemon.com) for alternative licensing for your company.
+
 ### usage
 
 ```golang
