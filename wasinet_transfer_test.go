@@ -47,20 +47,26 @@ func TestTransferTCPIPv4(t *testing.T) {
 func TestTransferTCP4IPv4(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkDial(ctx, t, listentcp(t, "tcp4", ":0"))
+	checkTransfer(ctx, t, listentcp(t, "tcp4", ":0"))
 }
 
 func TestTransferTCPIPv6(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkDial(ctx, t, listentcp(t, "tcp", "[::]:0"))
+	checkTransfer(ctx, t, listentcp(t, "tcp", "[::]:0"))
 }
 
 func TestTransferTCP6IPv6(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkDial(ctx, t, listentcp(t, "tcp6", "[::]:0"))
+	checkTransfer(ctx, t, listentcp(t, "tcp6", "[::]:0"))
 }
+
+// func TestTransferUnix(t *testing.T) {
+// 	ctx, done := testx.WithDeadline(t)
+// 	defer done()
+// 	checkTransfer(ctx, t, listentcp(t, "unix", "test.socket"))
+// }
 
 func TestTransferHTTP(t *testing.T) {
 	var buf bytes.Buffer
