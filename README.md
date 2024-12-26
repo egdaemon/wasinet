@@ -58,4 +58,4 @@ Now, do not misunderstand us, we understand everyones position which is why we w
 is as transparent as possible until the ecosystem at large gets its act together. In the meantime this library is meant to be simple to inject,
 and be runtime agnostic while enabling network functionality within a guest wasi binary written in golang and using this library.
 
-In the meantime, I'd like to thank the authors of [wazero](https://github.com/tetratelabs/wazero), and [dispatchrun/net](https://github.com/dispatchrun/net). both wonderful pieces of software and I shameless plumbed their depths when implementing this library.
+I'd like to thank the authors of [wazero](https://github.com/tetratelabs/wazero), and [dispatchrun/net](https://github.com/dispatchrun/net). both wonderful pieces of software and I shameless plumbed their depths when implementing this library.
