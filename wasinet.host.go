@@ -151,7 +151,7 @@ func SocketSendTo(fn SendToFn) SendToHostFn {
 			log.Println("failed", err)
 			return ffi.Errno(err)
 		}
-		log.Println("sending to", sa)
+
 		n, err := fn(ctx, int(fd), sa, vecs, int(flags))
 		if err != nil {
 			log.Println("failed", err)
