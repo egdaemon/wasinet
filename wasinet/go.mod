@@ -1,4 +1,4 @@
-module github.com/egdaemon/wasinet
+module github.com/egdaemon/wasinet/wasinet
 
 go 1.23.4
 

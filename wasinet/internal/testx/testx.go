@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egdaemon/wasinet/internal/errorsx"
+	"github.com/egdaemon/wasinet/wasinet/internal/errorsx"
 )
 
 type deadline interface {

@@ -7,8 +7,8 @@ import (
 	"net"
 	"syscall"
 
-	"github.com/egdaemon/wasinet/internal/bytesx"
-	"github.com/egdaemon/wasinet/internal/errorsx"
+	"github.com/egdaemon/wasinet/wasinet/internal/bytesx"
+	"github.com/egdaemon/wasinet/wasinet/internal/errorsx"
 )
 
 // intercept read and write calls
