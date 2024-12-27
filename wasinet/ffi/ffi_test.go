@@ -49,7 +49,7 @@ func TestReadSliceStruct(t *testing.T) {
 	)
 
 	exptr, exlen := ffi.Slice(ex)
-	result, err := ffi.ReadSlice[m](ffi.Native{}, exptr, exlen)
+	result, err := ffi.SliceRead[m](ffi.Native{}, exptr, exlen)
 	require.NoError(t, err)
 	require.Equal(t, ex, result)
 }
@@ -60,7 +60,7 @@ func TestReadSliceBytes(t *testing.T) {
 	)
 
 	exptr, exlen := ffi.Slice(ex)
-	result, err := ffi.ReadSlice[[]byte](ffi.Native{}, exptr, exlen)
+	result, err := ffi.SliceRead[[]byte](ffi.Native{}, exptr, exlen)
 	require.NoError(t, err)
 	require.Equal(t, ex, result, "%+v vs %+v", bytesx.Debug(ex[0]), bytesx.Debug(result[0]))
 }

@@ -20,6 +20,10 @@ we understand many companies avoid GPLv3 licenses, feel free to reach out to [us
 ### usage
 
 ```golang
+go get -u github.com/egdaemon/wasinet/wasinet@latest github.com/egdaemon/wasinet/wazeronet@latest
+```
+
+```golang
 package main
 
 import (
