@@ -101,5 +101,5 @@ func TestTransferHTTPExternal(t *testing.T) {
 	require.Equal(t, rsp.StatusCode, http.StatusOK)
 	bdy, err := io.ReadAll(rsp.Body)
 	require.NoError(t, err, "expected request to read body")
-	log.Println("DRP", string(bdy))
+	require.Greater(t, len(bdy), 10)
 }

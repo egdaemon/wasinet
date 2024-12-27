@@ -3,6 +3,7 @@ package wasinet_test
 import (
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
 	log.SetFlags(log.Lshortfile)
 	log.SetOutput(os.Stderr)
 	os.Exit(m.Run())
@@ -40,13 +42,13 @@ func listentcp(t testing.TB, network, address string) net.Listener {
 			server, client := net.Pipe()
 			go func(c net.Conn) {
 				if _, err := io.Copy(c, server); err != nil {
-					log.Println("server copy failed", err)
+					slog.Error("server copy failed", slog.Any("error", err))
 				}
 			}(conn)
 			go func(c net.Conn) {
 				defer c.Close()
 				if _, err := io.Copy(client, c); err != nil {
-					log.Println("client copy failed", err)
+					slog.Error("client copy failed", slog.Any("error", err))
 				}
 			}(conn)
 		}
