@@ -12,7 +12,7 @@ import (
 
 	"github.com/egdaemon/wasinet/wasinet"
 	"github.com/egdaemon/wasinet/wasinet/internal/bytesx"
-	"github.com/egdaemon/wasinet/wasinet/internal/testx"
+	"github.com/egdaemon/wasinet/wasinet/testx"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

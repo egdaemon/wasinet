@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	"github.com/egdaemon/wasinet/wasinet/ffi"
+	"github.com/egdaemon/wasinet/wasinet/ffierrors"
 	"github.com/egdaemon/wasinet/wasinet/internal/errorsx"
 )
 
@@ -87,23 +88,18 @@ func listen(fd int, backlog int) error {
 }
 
 func connect(fd int, sa sockaddr) error {
+	log.Printf("connect %d %+v\n", fd, errorsx.Stack())
 	rsa := sa.sockaddr()
 	rawaddr, rawaddrlen := ffi.Pointer(&rsa)
-	errno := sock_connect(int32(fd), rawaddr, rawaddrlen)
+	err := ffierrors.Error(sock_connect(int32(fd), rawaddr, rawaddrlen))
 	runtime.KeepAlive(sa)
-	if errno != 0 {
-		return errno
-	}
-	return nil
+	return err
 }
 
 func getsockopt(fd, level, opt int) (value int, err error) {
 	var n int32
-	errno := sock_getsockopt(int32(fd), uint32(level), uint32(opt), unsafe.Pointer(&n), 4)
-	if errno != 0 {
-		return 0, errno
-	}
-	return int(n), nil
+	errno := ffierrors.Error(sock_getsockopt(int32(fd), uint32(level), uint32(opt), unsafe.Pointer(&n), 4))
+	return int(n), errno
 }
 
 func setsockopt(fd, level, opt int, value int) error {
@@ -118,7 +114,7 @@ func setsockopt(fd, level, opt int, value int) error {
 func getrawsockname(fd int) (rsa rawsocketaddr, err error) {
 	rsaptr, rsalength := ffi.Pointer(&rsa)
 	errno := sock_getlocaladdr(int32(fd), rsaptr, rsalength)
-	return rsa, ffi.ErrErrno(errno)
+	return rsa, ffierrors.Error(errno)
 }
 
 func getsockname(fd int) (sa sockaddr, err error) {
@@ -132,13 +128,12 @@ func getsockname(fd int) (sa sockaddr, err error) {
 func getrawpeername(fd int) (rsa rawsocketaddr, err error) {
 	rsaptr, rsalength := ffi.Pointer(&rsa)
 	errno := sock_getpeeraddr(int32(fd), rsaptr, rsalength)
-	return rsa, ffi.ErrErrno(errno)
+	return rsa, ffierrors.Error(errno)
 }
 
 func getpeername(fd int) (sockaddr, error) {
 	rsa, err := getrawpeername(fd)
 	if err != nil {
-		log.Println("peername err", err)
 		return nil, err
 	}
 	return rawtosockaddr(&rsa)
@@ -216,7 +211,7 @@ func recvfrom(fd int, iovs [][]byte, flags int32) (n int, addr rawsocketaddr, of
 	runtime.KeepAlive(addrptr)
 	runtime.KeepAlive(iovsptr)
 	runtime.KeepAlive(iovs)
-	return n, addr, oflags, ffi.ErrErrno(errno)
+	return n, addr, oflags, ffierrors.Error(errno)
 }
 
 func sendto(fd int, iovs [][]byte, addr rawsocketaddr, flags int32) (int, error) {
@@ -234,7 +229,7 @@ func sendto(fd int, iovs [][]byte, addr rawsocketaddr, flags int32) (int, error)
 	)
 	runtime.KeepAlive(addr)
 	runtime.KeepAlive(iovs)
-	return nwritten, ffi.ErrErrno(errno)
+	return nwritten, ffierrors.Error(errno)
 }
 
 func strlen(b []byte) (n int) {
@@ -506,9 +501,25 @@ func socnetwork(family, sotype int) string {
 	return ""
 }
 
+type _AFFamilyMap struct {
+	AF_INET  int32
+	AF_INET6 int32
+	AF_UNIX  int32
+}
+
+var (
+	mapped = _AFFamilyMap{}
+)
+
+func init() {
+	mapped.AF_UNIX = sock_determine_host_af_family(syscall.AF_UNIX)
+	mapped.AF_INET = sock_determine_host_af_family(syscall.AF_INET)
+	mapped.AF_INET6 = sock_determine_host_af_family(syscall.AF_INET6)
+}
+
 func sockipToNetAddr(family, sotype int) func(sa sockaddr) net.Addr {
-	switch family {
-	case syscall.AF_INET, syscall.AF_INET6:
+	switch int32(family) {
+	case mapped.AF_INET, mapped.AF_INET6:
 		switch sotype {
 		case syscall.SOCK_STREAM:
 			return sockipaddrToTCP
@@ -517,7 +528,7 @@ func sockipToNetAddr(family, sotype int) func(sa sockaddr) net.Addr {
 		case syscall.SOCK_RAW:
 			return sockipaddrToIP
 		}
-	case syscall.AF_UNIX:
+	case mapped.AF_UNIX:
 		switch sotype {
 		case syscall.SOCK_STREAM:
 			return sockipaddrToUnix
@@ -527,6 +538,7 @@ func sockipToNetAddr(family, sotype int) func(sa sockaddr) net.Addr {
 			return sockipaddrToUnixpacket
 		}
 	}
+	log.Println(family, mapped.AF_INET, mapped.AF_INET6, mapped.AF_UNIX, "|", sotype, syscall.SOCK_STREAM, syscall.SOCK_DGRAM)
 	return func(sa sockaddr) net.Addr { return nil }
 }
 
@@ -538,7 +550,7 @@ func newFD(sysfd int, family int, sotype int, net string, laddr, raddr net.Addr)
 	if raddr == nil {
 		raddr = sockipToNetAddr(family, sotype)(nil)
 	}
-
+	log.Println("newFD", family, sotype, laddr, raddr)
 	s := &netFD{
 		fd:     sysfd,
 		family: family,
@@ -615,14 +627,14 @@ func (fd *netFD) shutdown(how int) error {
 	case syscall.ENOTCONN:
 		switch fd.laddr.(type) {
 		case *net.UDPAddr:
-			err = ffi.ErrnoSuccess()
+			err = ffierrors.ErrnoSuccess()
 		default:
 		}
 	}
 
 	runtime.SetFinalizer(fd, nil)
 	runtime.KeepAlive(fd)
-	return wrapSyscallError("shutdown", ffi.ErrErrno(err))
+	return wrapSyscallError("shutdown", ffierrors.Error(err))
 }
 
 func (fd *netFD) closeRead() error {

@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/egdaemon/wasinet/wasinet/ffi"
+	"github.com/egdaemon/wasinet/wasinet/ffierrors"
 )
 
 func resolveaddrip(op, network, address string) (res []net.IP, err error) {
@@ -56,7 +57,7 @@ func resolveaddrip(op, network, address string) (res []net.IP, err error) {
 	runtime.KeepAlive(address)
 	runtime.KeepAlive(buf)
 
-	if err = ffi.ErrErrno(errno); err != nil {
+	if err = ffierrors.Error(errno); err != nil {
 		return nil, err
 	}
 

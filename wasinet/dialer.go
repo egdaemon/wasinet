@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/egdaemon/wasinet/wasinet/ffierrors"
 	"github.com/egdaemon/wasinet/wasinet/internal/errorsx"
 )
 
@@ -135,9 +136,10 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	var inProgress bool
 	switch err := connect(fd, connectAddr); err {
 	case nil:
-	case syscall.EINPROGRESS:
+	case ffierrors.EINPROGRESS:
 		inProgress = true
 	default:
+		log.Printf("WAAAAT conn %T %+v vs %d\n", err, err, syscall.EINPROGRESS)
 		return nil, os.NewSyscallError("connect", err)
 	}
 
@@ -234,21 +236,6 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	// dialer.go:234: ---------------------------------------------- OKEY
 
 	// unix.Fcntl(fdi, syscall.F_GETFL, 0)
-	return initsocket(sconn)
-
-}
-
-func initsocket(sconn *netFD) (net.Conn, error) {
-	// sconn.discard()
-	// f := os.NewFile(uintptr(sconn.fd), "")
-	// defer f.Close()
-
-	// c, err := net.FileConn(f)
-	// if err != nil {
-	// 	return nil, err
-	// }
 	return makeConn(sconn)
-	// r0, err := unix.Fcntl(fd, syscall.F_DUPFD_CLOEXEC, 0)
-	// unix.SetNonblock()
 
 }

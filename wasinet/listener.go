@@ -177,8 +177,13 @@ func makePacketConn(f *netFD) *packetConn {
 	return &packetConn{conn: f}
 }
 
+type netconn interface {
+	syscall.Conn
+	net.Conn
+}
+
 type packetConn struct {
-	conn *netFD
+	conn netconn
 }
 
 func (c *packetConn) Close() error {
@@ -186,15 +191,17 @@ func (c *packetConn) Close() error {
 }
 
 func (c *packetConn) CloseRead() (err error) {
-	cerr := netsysconn{c.conn}.Control(func(fd uintptr) {
-		err = c.conn.closeRead()
+	cerr := errorsx.Must(c.conn.SyscallConn()).Control(func(fd uintptr) {
+		err = sock_shutdown(int32(fd), syscall.SHUT_RD)
+		// err = c.conn.closeRead()
 	})
 	return errorsx.Compact(cerr, err)
 }
 
 func (c *packetConn) CloseWrite() (err error) {
-	cerr := netsysconn{c.conn}.Control(func(fd uintptr) {
-		err = c.conn.closeWrite()
+	cerr := errorsx.Must(c.conn.SyscallConn()).Control(func(fd uintptr) {
+		err = sock_shutdown(int32(fd), syscall.SHUT_WR)
+		// err = c.conn.closeWrite()
 	})
 	return errorsx.Compact(cerr, err)
 }
@@ -205,7 +212,7 @@ func (c *packetConn) Read(b []byte) (int, error) {
 }
 
 func (c *packetConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
-	switch c.conn.laddr.(type) {
+	switch c.conn.LocalAddr().(type) {
 	case *net.UDPAddr:
 		n, _, _, addr, err = c.ReadMsgUDP(b, nil)
 	default:
@@ -215,7 +222,7 @@ func (c *packetConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 }
 
 func (c *packetConn) ReadMsgUnix(b, oob []byte) (n, oobn, flags int, addr *net.UnixAddr, err error) {
-	rawConnErr := netsysconn{c.conn}.Read(func(fd uintptr) (done bool) {
+	rawConnErr := errorsx.Must(c.conn.SyscallConn()).Read(func(fd uintptr) (done bool) {
 		var raw rawsocketaddr
 		var oflags int32
 		n, raw, oflags, err = recvfrom(int(fd), [][]byte{b}, 0)
@@ -251,7 +258,7 @@ func (c *packetConn) ReadMsgUDP(b, oob []byte) (n, oobn, flags int, addr *net.UD
 }
 
 func (c *packetConn) ReadMsgUDPAddrPort(b, oob []byte) (n, oobn, flags int, addrPort netip.AddrPort, err error) {
-	werr := netsysconn{c.conn}.Read(func(fd uintptr) (done bool) {
+	werr := errorsx.Must(c.conn.SyscallConn()).Read(func(fd uintptr) (done bool) {
 		var raw rawsocketaddr
 		var oflags int32
 		n, raw, oflags, err = recvfrom(int(fd), [][]byte{b}, 0)
@@ -296,33 +303,33 @@ func (c *packetConn) ReadMsgUDPAddrPort(b, oob []byte) (n, oobn, flags int, addr
 }
 
 func (c *packetConn) Write(b []byte) (int, error) {
-	return c.WriteTo(b, c.conn.raddr)
+	return c.WriteTo(b, c.conn.RemoteAddr())
 }
 
 func (c *packetConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	switch a := addr.(type) {
 	case *net.UDPAddr:
-		if _, ok := c.conn.laddr.(*net.UDPAddr); ok {
+		if _, ok := c.conn.LocalAddr().(*net.UDPAddr); ok {
 			n, _, err := c.WriteMsgUDP(b, nil, a)
 			return n, err
 		}
 	case *net.UnixAddr:
-		if _, ok := c.conn.laddr.(*net.UnixAddr); ok {
+		if _, ok := c.conn.LocalAddr().(*net.UnixAddr); ok {
 			n, _, err := c.WriteMsgUnix(b, nil, a)
 			return n, err
 		}
 	}
 	return 0, &net.OpError{
 		Op:     "write",
-		Net:    c.conn.laddr.Network(),
-		Addr:   c.conn.laddr,
+		Net:    c.conn.LocalAddr().Network(),
+		Addr:   c.conn.LocalAddr(),
 		Source: addr,
 		Err:    net.InvalidAddrError("address type mismatch"),
 	}
 }
 
 func (c *packetConn) WriteMsgUnix(b, oob []byte, addr *net.UnixAddr) (n, oobn int, err error) {
-	werr := netsysconn{c.conn}.Write(func(fd uintptr) (done bool) {
+	werr := errorsx.Must(c.conn.SyscallConn()).Write(func(fd uintptr) (done bool) {
 		raw := (&sockaddrUnix{name: addr.Name}).sockaddr()
 		n, err = sendto(int(fd), [][]byte{b}, raw, 0)
 		return err != syscall.EAGAIN
@@ -335,7 +342,7 @@ func (c *packetConn) WriteMsgUDP(b, oob []byte, addr *net.UDPAddr) (n, oobn int,
 }
 
 func (c *packetConn) WriteMsgUDPAddrPort(b, oob []byte, addrPort netip.AddrPort) (n, oobn int, err error) {
-	cerr := netsysconn{c.conn}.Write(func(fd uintptr) (done bool) {
+	cerr := errorsx.Must(c.conn.SyscallConn()).Write(func(fd uintptr) (done bool) {
 		var raw rawsocketaddr
 		if raw, err = netipaddrportToRaw(addrPort); err != nil {
 			return false
@@ -347,11 +354,11 @@ func (c *packetConn) WriteMsgUDPAddrPort(b, oob []byte, addrPort netip.AddrPort)
 }
 
 func (c *packetConn) LocalAddr() net.Addr {
-	return c.conn.laddr
+	return c.conn.LocalAddr()
 }
 
 func (c *packetConn) RemoteAddr() net.Addr {
-	return c.conn.raddr
+	return c.conn.RemoteAddr()
 }
 
 func (c *packetConn) SetDeadline(t time.Time) error {
@@ -397,7 +404,6 @@ func makeConn(c net.Conn) (x net.Conn, err error) {
 	}
 
 	defer func() {
-		log.Printf("maybe closing? %T %v\n", x, err)
 		if err == nil {
 			return
 		}
@@ -473,15 +479,4 @@ func netFDFromNetConn(fd int, c net.Conn) (net.Conn, error) {
 	}
 
 	return c, nil
-	// addr := c.LocalAddr()
-
-	// family := netaddrfamily(addr)
-	// sotype, err := socketType(addr)
-	// if err != nil {
-	// 	return nil, os.NewSyscallError("socket", err)
-	// }
-
-	// nfd := newFD(fd, family, sotype, addr.Network(), addr, c.RemoteAddr())
-	// nfd.underlying = c
-	// return nfd, nil
 }

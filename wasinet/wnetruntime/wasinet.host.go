@@ -11,6 +11,7 @@ import (
 
 	"github.com/egdaemon/wasinet/wasinet"
 	"github.com/egdaemon/wasinet/wasinet/ffi"
+	"github.com/egdaemon/wasinet/wasinet/ffierrors"
 	"golang.org/x/sys/unix"
 )
 
@@ -43,7 +44,7 @@ func SocketOpen(open OpenFn) OpenHostFn {
 			return syscall.EFAULT
 		}
 
-		return ffi.Errno(errno)
+		return ffierrors.Errno(errno)
 	}
 }
 
@@ -60,9 +61,9 @@ func SocketBind(bind BindFn) BindHostFn {
 	) syscall.Errno {
 		sa, err := wasinet.ReadSockaddr(m, unsafe.Pointer(addr), addrlen)
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
-		return ffi.Errno(bind(ctx, int(fd), sa))
+		return ffierrors.Errno(bind(ctx, int(fd), sa))
 	}
 }
 
@@ -79,9 +80,9 @@ func SocketConnect(fn ConnectFn) ConnectHostFn {
 	) syscall.Errno {
 		sa, err := wasinet.ReadSockaddr(m, unsafe.Pointer(addr), addrlen)
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
-		return ffi.Errno(fn(ctx, int(fd), sa))
+		return ffierrors.Errno(fn(ctx, int(fd), sa))
 	}
 }
 
@@ -95,7 +96,7 @@ func SocketListen(fn ListenFn) ListenHostFn {
 		fd int32,
 		backlog int32,
 	) syscall.Errno {
-		return ffi.Errno(fn(ctx, int(fd), int(backlog)))
+		return ffierrors.Errno(fn(ctx, int(fd), int(backlog)))
 	}
 }
 
@@ -131,27 +132,27 @@ func SocketSendTo(fn SendToFn) SendToHostFn {
 	) syscall.Errno {
 		vecs, err := vectorread[byte](m, iovs, iovslen)
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
 		sa, err := wasinet.ReadSockaddr(m, unsafe.Pointer(addrptr), addrlen)
 		if err != nil {
 			log.Println("failed", err)
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
 		n, err := fn(ctx, int(fd), sa, vecs, int(flags))
 		if err != nil {
 			log.Println("failed", err)
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
 		if err = ffi.Uint32Write(m, unsafe.Pointer(nwritten), uint32(n)); err != nil {
 			log.Println("failed", err)
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
-		return ffi.ErrnoSuccess()
+		return ffierrors.ErrnoSuccess()
 	}
 }
 
@@ -180,32 +181,32 @@ func SocketRecvFrom(fn RecvFromFn) RecvFromHostFn {
 	) syscall.Errno {
 		vecs, err := vectorread[byte](m, iovsptr, iovslen)
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
 		n, roflags, sa, err := fn(ctx, int(fd), vecs, int(iflags))
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
 		addr, err := wasinet.Sockaddr(sa)
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
 		if err = ffi.RawWrite(m, &addr, unsafe.Pointer(addrptr), uint32(unsafe.Sizeof(addr))); err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
 		if err = ffi.Uint32Write(m, unsafe.Pointer(nread), uint32(n)); err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
 		if err = ffi.Uint32Write(m, unsafe.Pointer(oflags), uint32(roflags)); err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
-		return ffi.ErrnoSuccess()
+		return ffierrors.ErrnoSuccess()
 	}
 }
 
@@ -224,10 +225,10 @@ func SocketSetOpt(fn SetOptFn) SetOptHostFn {
 	) syscall.Errno {
 		value, err := ffi.BytesRead(m, unsafe.Pointer(valueptr), valuelen)
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
-		return ffi.Errno(fn(ctx, int(fd), int(level), int(name), value))
+		return ffierrors.Errno(fn(ctx, int(fd), int(level), int(name), value))
 	}
 }
 
@@ -246,15 +247,15 @@ func SocketGetOpt(fn GetOptFn) GetOptHostFn {
 	) syscall.Errno {
 		value, err := ffi.BytesRead(m, unsafe.Pointer(valueptr), valuelen)
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 		rv, err := fn(ctx, int(fd), int(level), int(name), value)
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 		switch av := rv.(type) {
 		case int:
-			return ffi.Errno(ffi.Uint32Write(m, unsafe.Pointer(valueptr), uint32(av)))
+			return ffierrors.Errno(ffi.Uint32Write(m, unsafe.Pointer(valueptr), uint32(av)))
 		default:
 			log.Printf("unsupported socket option type: %T\n", rv)
 			return syscall.ENOTSUP
@@ -275,19 +276,19 @@ func SocketLocalAddr(fn LocalAddrFn) LocalAddrHostFn {
 	) syscall.Errno {
 		sa, err := fn(ctx, int(fd))
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
 		addr, err := wasinet.Sockaddr(sa)
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
 		if err := ffi.RawWrite(m, &addr, unsafe.Pointer(addrptr), addrlen); err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
-		return ffi.ErrnoSuccess()
+		return ffierrors.ErrnoSuccess()
 	}
 }
 
@@ -304,14 +305,14 @@ func SocketPeerAddr(fn PeerAddrFn) PeerAddrHostFn {
 	) syscall.Errno {
 		sa, err := fn(ctx, int(fd))
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 		addr, err := wasinet.Sockaddr(sa)
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
-		return ffi.Errno(ffi.RawWrite(m, &addr, unsafe.Pointer(addrptr), addrlen))
+		return ffierrors.Errno(ffi.RawWrite(m, &addr, unsafe.Pointer(addrptr), addrlen))
 	}
 }
 
@@ -322,7 +323,7 @@ func SocketShutdown(fn ShutdownFn) ShutdownHostFn {
 	return func(
 		ctx context.Context, m ffi.Memory, fd, how int32,
 	) syscall.Errno {
-		return ffi.Errno(fn(ctx, int(fd), int(how)))
+		return ffierrors.Errno(fn(ctx, int(fd), int(how)))
 	}
 }
 
@@ -349,18 +350,18 @@ func SocketAddrPort(portfn AddrPortFn) AddrPortHostFn {
 
 		network, err := ffi.StringRead(m, unsafe.Pointer(networkptr), networklen)
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 		service, err := ffi.StringRead(m, unsafe.Pointer(serviceptr), servicelen)
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
 		if port, err = portfn(ctx, network, service); err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
-		return ffi.Errno(ffi.Uint32Write(m, unsafe.Pointer(portptr), uint32(port)))
+		return ffierrors.Errno(ffi.Uint32Write(m, unsafe.Pointer(portptr), uint32(port)))
 	}
 }
 
@@ -391,11 +392,11 @@ func SocketAddrIP(fn AddrIPFn) AddrIPHostFn {
 
 		network, err := ffi.StringRead(m, unsafe.Pointer(networkptr), networklen)
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 		address, err := ffi.StringRead(m, unsafe.Pointer(addressptr), addresslen)
 		if err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
 		if ip, err = fn(ctx, network, address); err != nil {
@@ -414,9 +415,9 @@ func SocketAddrIP(fn AddrIPFn) AddrIPHostFn {
 		}
 
 		if err = ffi.BytesWrite(m, buf, unsafe.Pointer(ipres), maxResLen); err != nil {
-			return ffi.Errno(err)
+			return ffierrors.Errno(err)
 		}
 
-		return ffi.Errno(ffi.Uint32Write(m, unsafe.Pointer(ipreslen), uint32(len(buf))))
+		return ffierrors.Errno(ffi.Uint32Write(m, unsafe.Pointer(ipreslen), uint32(len(buf))))
 	}
 }
