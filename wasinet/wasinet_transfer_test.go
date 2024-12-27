@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/egdaemon/wasinet/wasinet"
 	"github.com/egdaemon/wasinet/wasinet/internal/bytesx"
 	"github.com/egdaemon/wasinet/wasinet/internal/testx"
@@ -30,9 +29,7 @@ func checkTransfer(ctx context.Context, t testing.TB, li addrconn) {
 		require.NoError(t, conn.Close())
 	})
 
-	log.Printf("checkpoint %T %s\n", conn, spew.Sdump(conn))
 	testx.Must(conn.Write([]byte("hello world")))(t)
-	log.Println("checkpoint")
 	n := testx.Must(conn.Read(buf))(t)
 	assert.Equal(t, testx.IOString(bytes.NewReader(buf[:n])), "hello world", "expected strings to match")
 }

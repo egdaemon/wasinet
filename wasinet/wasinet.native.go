@@ -146,7 +146,6 @@ func sock_recv_from(
 			return ffi.Errno(err)
 		}
 
-		log.Println("derp", sa, err)
 		addr, err := Sockaddr(sa)
 		if err != nil {
 			log.Println("failed", err)

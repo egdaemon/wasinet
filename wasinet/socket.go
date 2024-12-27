@@ -97,13 +97,6 @@ func connect(fd int, sa sockaddr) error {
 	return nil
 }
 
-func shutdown(fd, how int) error {
-	if errno := sock_shutdown(int32(fd), int32(how)); errno != 0 {
-		return errno
-	}
-	return nil
-}
-
 func getsockopt(fd, level, opt int) (value int, err error) {
 	var n int32
 	errno := sock_getsockopt(int32(fd), uint32(level), uint32(opt), unsafe.Pointer(&n), 4)
@@ -586,8 +579,8 @@ func (t netsysconn) Write(f func(fd uintptr) (done bool)) error {
 var _ syscall.RawConn = netsysconn{}
 
 type netFD struct {
-	underlying net.Conn
-	fd         int
+	fd   int
+	dead *int
 	// immutable until Close
 	family int
 	sotype int
@@ -597,16 +590,36 @@ type netFD struct {
 	rraddr *rawsocketaddr
 }
 
+func (c *netFD) discard() { c.dead = &c.fd }
+
+func (c *netFD) ok() bool { return c != nil && c.dead == nil }
+
 func (fd *netFD) SyscallConn() (syscall.RawConn, error) {
 	return netsysconn{fd}, nil
 }
 
 func (fd *netFD) Close() error {
+	if !fd.ok() {
+		return nil
+	}
+	defer fd.discard()
 	return fd.shutdown(syscall.SHUT_RDWR)
 }
 
 func (fd *netFD) shutdown(how int) error {
+	if !fd.ok() {
+		return nil
+	}
 	err := sock_shutdown(int32(fd.fd), int32(how))
+	switch err {
+	case syscall.ENOTCONN:
+		switch fd.laddr.(type) {
+		case *net.UDPAddr:
+			err = ffi.ErrnoSuccess()
+		default:
+		}
+	}
+
 	runtime.SetFinalizer(fd, nil)
 	runtime.KeepAlive(fd)
 	return wrapSyscallError("shutdown", ffi.ErrErrno(err))
@@ -629,15 +642,13 @@ func (fd *netFD) initremote() error {
 	var (
 		saddr sockaddr
 	)
-	log.Println("initremote initiated", fd.raddr, fmt.Sprintf("%+v", errorsx.Stack()))
+	// log.Println("initremote initiated", fd.raddr, fmt.Sprintf("%+v", errorsx.Stack()))
 	if fd.raddr == nil {
-		log.Println("checkpoint")
 		return fmt.Errorf("no remote address")
 	}
 
 	saddr, err := netaddrToSockaddr(fd.raddr)
 	if err != nil {
-		log.Println("checkpoint", err)
 		return err
 	}
 
@@ -646,9 +657,6 @@ func (fd *netFD) initremote() error {
 }
 
 func (fd *netFD) Write(p []byte) (n int, err error) {
-	if fd.rraddr == nil {
-		return 0, fmt.Errorf("invalid socket")
-	}
 	n, err = sendto(fd.fd, [][]byte{p}, *fd.rraddr, 0)
 	return n, wrapSyscallError(writeSyscallName, err)
 }

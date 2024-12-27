@@ -87,7 +87,6 @@ func DialContext(ctx context.Context, network, address string) (net.Conn, error)
 	for _, addr = range addrs {
 		conn, err = dialAddr(ctx, addr)
 		if err == nil {
-			log.Println("hello")
 			return conn, nil
 		}
 
@@ -143,19 +142,25 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	}
 
 	if sotype == syscall.SOCK_DGRAM {
-		name, err := getsockname(fd)
+		localaddr, err := getsockname(fd)
 		if err != nil {
 			return nil, err
 		}
 
-		laddr := sockipToNetAddr(af, sotype)(name)
+		peeraddr, err := getpeername(fd)
+		if err != nil {
+			return nil, err
+		}
 
-		log.Println("SOCKDGRAM", addr)
-		sconn := newFD(fd, af, sotype, socnetwork(af, sotype), laddr, addr)
+		laddr := sockipToNetAddr(af, sotype)(localaddr)
+		raddr := sockipToNetAddr(af, sotype)(peeraddr)
+
+		sconn := newFD(fd, af, sotype, socnetwork(af, sotype), laddr, raddr)
 		fd = -1 // now the *netFD owns the file descriptor
 		if err = sconn.initremote(); err != nil {
 			return nil, err
 		}
+
 		return makePacketConn(sconn), nil
 	}
 
@@ -217,5 +222,33 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 		}
 	}
 
+	log.Println("------------------------------------------------ OKAY")
+	defer log.Println("---------------------------------------------- OKEY")
+
+	// 	dialer.go:224: ------------------------------------------------ OKAY
+	// listener.go:421: conn initializing *net.TCPConn
+	// wasinet.native.go:93: sock_localaddr 8
+	// wasinet.native.go:111: sock_peeraddr 8
+	// listener.go:468: translating to netfd 8 *net.TCPConn [::1]:55760 [::1]:36871
+	// listener.go:400: maybe closing? *net.TCPConn <nil>
+	// dialer.go:234: ---------------------------------------------- OKEY
+
+	// unix.Fcntl(fdi, syscall.F_GETFL, 0)
+	return initsocket(sconn)
+
+}
+
+func initsocket(sconn *netFD) (net.Conn, error) {
+	// sconn.discard()
+	// f := os.NewFile(uintptr(sconn.fd), "")
+	// defer f.Close()
+
+	// c, err := net.FileConn(f)
+	// if err != nil {
+	// 	return nil, err
+	// }
 	return makeConn(sconn)
+	// r0, err := unix.Fcntl(fd, syscall.F_DUPFD_CLOEXEC, 0)
+	// unix.SetNonblock()
+
 }

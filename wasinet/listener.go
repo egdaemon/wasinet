@@ -27,7 +27,6 @@ func Listen(network, address string) (net.Listener, error) {
 	}
 
 	firstaddr := addrs[0]
-	log.Println("checkpoint")
 	lstn, err := listenAddr(firstaddr)
 	return lstn, netOpErr(oplisten, firstaddr, err)
 }
@@ -391,18 +390,20 @@ func setNetAddr(sotype int, dst net.Addr, src sockaddr) {
 // In Go 1.21, the net package cannot initialize the local and remote addresses
 // of network connections. For this reason, we use this function to retreive the
 // addresses and return a wrapped net.Conn with LocalAddr/RemoteAddr implemented.
-func makeConn(c net.Conn) (_ net.Conn, err error) {
+func makeConn(c net.Conn) (x net.Conn, err error) {
 	syscallConn, ok := c.(syscall.Conn)
 	if !ok {
 		return c, nil
 	}
 
 	defer func() {
+		log.Printf("maybe closing? %T %v\n", x, err)
 		if err == nil {
 			return
 		}
 
 		if c != nil {
+			log.Println("CLOSING", err)
 			c.Close()
 		}
 	}()
@@ -433,14 +434,11 @@ func makeConn(c net.Conn) (_ net.Conn, err error) {
 
 		if c, err = netFDFromNetConn(int(fd), c); err != nil {
 			return
-			// } else {
-			// 	c = netfd
 		}
 
 		if _, unix := addr.(*sockaddrUnix); unix {
 			c = &unixConn{Conn: c}
 		}
-
 	})
 
 	return c, errorsx.Compact(err, cerr)
