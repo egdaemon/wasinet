@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/egdaemon/wasinet/wasinet/ffi"
@@ -59,7 +60,6 @@ func lookupAddr(_ context.Context, op, network, address string) ([]net.Addr, err
 
 func socket(af, sotype, proto int) (fd int, err error) {
 	var newfd int32 = -1
-	// log.Println("socket", af, sotype, proto)
 	errno := sock_open(int32(af), int32(sotype), int32(proto), unsafe.Pointer(&newfd))
 	if errno != 0 {
 		return -1, errno
@@ -121,26 +121,32 @@ func setsockopt(fd, level, opt int, value int) error {
 	return nil
 }
 
-func getsockname(fd int) (sa sockaddr, err error) {
-	var rsa rawsocketaddr
+func getrawsockname(fd int) (rsa rawsocketaddr, err error) {
 	rsaptr, rsalength := ffi.Pointer(&rsa)
 	errno := sock_getlocaladdr(int32(fd), rsaptr, rsalength)
-	if errno != 0 {
-		return nil, errno
-	}
+	return rsa, ffi.ErrErrno(errno)
+}
 
+func getsockname(fd int) (sa sockaddr, err error) {
+	rsa, err := getrawsockname(fd)
+	if err != nil {
+		return nil, err
+	}
 	return rawtosockaddr(&rsa)
 }
 
-func getpeername(fd int) (sockaddr, error) {
-	var rsa rawsocketaddr
-
+func getrawpeername(fd int) (rsa rawsocketaddr, err error) {
 	rsaptr, rsalength := ffi.Pointer(&rsa)
 	errno := sock_getpeeraddr(int32(fd), rsaptr, rsalength)
-	if errno != 0 {
-		return nil, errno
-	}
+	return rsa, ffi.ErrErrno(errno)
+}
 
+func getpeername(fd int) (sockaddr, error) {
+	rsa, err := getrawpeername(fd)
+	if err != nil {
+		log.Println("peername err", err)
+		return nil, err
+	}
 	return rawtosockaddr(&rsa)
 }
 
@@ -153,10 +159,9 @@ type sockipaddr[T any] struct {
 	port uint32
 }
 
-func (s sockipaddr[T]) sockaddr() rawsocketaddr {
+func (s sockipaddr[T]) sockaddr() (raddr rawsocketaddr) {
 	ptr, plen := ffi.Pointer(&s)
 	buf := errorsx.Must(ffi.SliceRead[byte](ffi.Native{}, ptr, plen))
-	raddr := rawsocketaddr{}
 
 	switch x := any(s.addr).(type) {
 	case sockip4:
@@ -403,4 +408,252 @@ type closeReader interface {
 
 type closeWriter interface {
 	CloseWrite() error
+}
+
+const (
+	readSyscallName     = "read"
+	readFromSyscallName = "recvfrom"
+	readMsgSyscallName  = "recvmsg"
+	writeSyscallName    = "write"
+	writeToSyscallName  = "sendto"
+	writeMsgSyscallName = "sendmsg"
+)
+
+func sockipaddrToUnix(sa sockaddr) net.Addr {
+	if sa == nil {
+		return &net.UnixAddr{}
+	}
+	switch proto := sa.(type) {
+	case *sockipaddr[sockaddrUnix]:
+		return &net.UnixAddr{Name: proto.addr.name, Net: "unix"}
+	default:
+		return nil
+	}
+}
+
+func sockipaddrToUnixgram(sa sockaddr) net.Addr {
+	if sa == nil {
+		return &net.UnixAddr{}
+	}
+	switch proto := sa.(type) {
+	case *sockipaddr[sockaddrUnix]:
+		return &net.UnixAddr{Name: proto.addr.name, Net: "unixgram"}
+	default:
+		return nil
+	}
+}
+
+func sockipaddrToUnixpacket(sa sockaddr) net.Addr {
+	if sa == nil {
+		return &net.UnixAddr{}
+	}
+	switch proto := sa.(type) {
+	case *sockipaddr[sockaddrUnix]:
+		return &net.UnixAddr{Name: proto.addr.name, Net: "unixpacket"}
+	}
+	return nil
+}
+func sockipaddrToTCP(sa sockaddr) net.Addr {
+	if sa == nil {
+		return &net.TCPAddr{}
+	}
+
+	switch proto := sa.(type) {
+	case *sockipaddr[sockip4]:
+		return &net.TCPAddr{IP: proto.addr.ip[0:], Port: int(proto.port)}
+	case *sockipaddr[sockip6]:
+		return &net.TCPAddr{IP: proto.addr.ip[0:], Port: int(proto.port), Zone: ""}
+	}
+	return nil
+}
+
+func sockipaddrToUDP(sa sockaddr) net.Addr {
+	if sa == nil {
+		return &net.UDPAddr{}
+	}
+
+	switch proto := sa.(type) {
+	case *sockipaddr[sockip4]:
+		return &net.UDPAddr{IP: proto.addr.ip[0:], Port: int(proto.port)}
+	case *sockipaddr[sockip6]:
+		return &net.UDPAddr{IP: proto.addr.ip[0:], Port: int(proto.port), Zone: ""}
+	default:
+		return nil
+	}
+}
+
+func sockipaddrToIP(sa sockaddr) net.Addr {
+	if sa == nil {
+		return &net.IPAddr{}
+	}
+
+	switch proto := sa.(type) {
+	case *sockipaddr[sockip4]:
+		return &net.IPAddr{IP: proto.addr.ip[0:]}
+	case *sockipaddr[sockip6]:
+		return &net.IPAddr{IP: proto.addr.ip[0:], Zone: ""}
+	default:
+		return nil
+	}
+}
+
+func socnetwork(family, sotype int) string {
+	switch family {
+	case syscall.AF_INET, syscall.AF_INET6:
+		switch sotype {
+		case syscall.SOCK_STREAM:
+			return "tcp"
+		case syscall.SOCK_DGRAM:
+			return "udp"
+		case syscall.SOCK_RAW:
+			return "ip"
+		}
+	case syscall.AF_UNIX:
+		switch sotype {
+		case syscall.SOCK_STREAM:
+			return "unix"
+		case syscall.SOCK_DGRAM:
+			return "unixgram"
+		case syscall.SOCK_SEQPACKET:
+			return "unixpacket"
+		}
+	}
+
+	return ""
+}
+
+func sockipToNetAddr(family, sotype int) func(sa sockaddr) net.Addr {
+	switch family {
+	case syscall.AF_INET, syscall.AF_INET6:
+		switch sotype {
+		case syscall.SOCK_STREAM:
+			return sockipaddrToTCP
+		case syscall.SOCK_DGRAM:
+			return sockipaddrToUDP
+		case syscall.SOCK_RAW:
+			return sockipaddrToIP
+		}
+	case syscall.AF_UNIX:
+		switch sotype {
+		case syscall.SOCK_STREAM:
+			return sockipaddrToUnix
+		case syscall.SOCK_DGRAM:
+			return sockipaddrToUnixgram
+		case syscall.SOCK_SEQPACKET:
+			return sockipaddrToUnixpacket
+		}
+	}
+	return func(sa sockaddr) net.Addr { return nil }
+}
+
+func newFD(sysfd int, family int, sotype int, net string, laddr, raddr net.Addr, rraddr *rawsocketaddr) *netFD {
+	s := &netFD{
+		fd:     sysfd,
+		family: family,
+		sotype: sotype,
+		net:    net,
+		laddr:  laddr,
+		raddr:  raddr,
+	}
+	runtime.SetFinalizer(s, (*netFD).Close)
+	return s
+}
+
+type netsysconn struct {
+	*netFD
+}
+
+func (t netsysconn) Control(f func(fd uintptr)) error {
+	f(uintptr(t.fd))
+	return nil
+}
+
+func (t netsysconn) Read(f func(fd uintptr) (done bool)) error {
+	for !f(uintptr(t.fd)) {
+		// Tthere are almost certainly bugs here not checking to ensure its open for example.
+	}
+	return nil
+}
+
+// Write is like Read but for writing.
+func (t netsysconn) Write(f func(fd uintptr) (done bool)) error {
+	for !f(uintptr(t.fd)) {
+		// Tthere are almost certainly bugs here not checking to ensure its open for example.
+	}
+	return nil
+}
+
+var _ syscall.RawConn = netsysconn{}
+
+type netFD struct {
+	fd int
+	// immutable until Close
+	family int
+	sotype int
+	net    string
+	laddr  net.Addr
+	raddr  net.Addr
+	rraddr *rawsocketaddr
+}
+
+func (fd *netFD) SyscallConn() (syscall.RawConn, error) {
+	return netsysconn{fd}, nil
+}
+
+func (fd *netFD) Close() error {
+	return fd.shutdown(syscall.SHUT_RDWR)
+}
+
+func (fd *netFD) shutdown(how int) error {
+	err := sock_shutdown(int32(fd.fd), int32(how))
+	runtime.SetFinalizer(fd, nil)
+	runtime.KeepAlive(fd)
+	return wrapSyscallError("shutdown", ffi.ErrErrno(err))
+}
+
+func (fd *netFD) closeRead() error {
+	return fd.shutdown(syscall.SHUT_RD)
+}
+
+func (fd *netFD) closeWrite() error {
+	return fd.shutdown(syscall.SHUT_WR)
+}
+
+func (fd *netFD) Read(p []byte) (n int, err error) {
+	n, _, _, err = recvfrom(fd.fd, [][]byte{p}, 0)
+	return n, wrapSyscallError(readSyscallName, err)
+}
+
+func (fd *netFD) Write(p []byte) (n int, err error) {
+	n, err = sendto(fd.fd, [][]byte{p}, *fd.rraddr, 0)
+	return n, wrapSyscallError(writeSyscallName, err)
+}
+
+func (c *netFD) SetDeadline(t time.Time) error {
+	return nil // TODO
+}
+
+func (c *netFD) SetReadDeadline(t time.Time) error {
+	return nil // TODO
+}
+
+func (c *netFD) SetWriteDeadline(t time.Time) error {
+	return nil // TODO
+}
+
+func (fd *netFD) LocalAddr() net.Addr {
+	return fd.laddr
+}
+
+func (fd *netFD) RemoteAddr() net.Addr {
+	return fd.laddr
+}
+
+// wrapSyscallError takes an error and a syscall name. If the error is
+// a syscall.Errno, it wraps it in an os.SyscallError using the syscall name.
+func wrapSyscallError(name string, err error) error {
+	if _, ok := err.(syscall.Errno); ok {
+		err = os.NewSyscallError(name, err)
+	}
+	return err
 }

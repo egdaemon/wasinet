@@ -3,12 +3,14 @@ package wasinet
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log"
 	"log/slog"
 	"net"
 	"os"
 	"syscall"
 	"time"
+
+	"github.com/egdaemon/wasinet/wasinet/internal/errorsx"
 )
 
 // Dialer is a type similar to net.Dialer but it uses the dial functions defined
@@ -78,6 +80,7 @@ func Dial(network, address string) (net.Conn, error) {
 func DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	addrs, err := lookupAddr(ctx, opdial, network, address)
 	if err != nil {
+		log.Println("DERP", err)
 		return nil, netOpErr(opdial, unresolvedaddr(network, address), err)
 	}
 	var addr net.Addr
@@ -92,7 +95,7 @@ func DialContext(ctx context.Context, network, address string) (net.Conn, error)
 			break
 		}
 	}
-
+	log.Println("derp", err)
 	return nil, netOpErr(opdial, unresolvedaddr(network, address), err)
 }
 
@@ -112,10 +115,6 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 			syscall.Close(fd)
 		}
 	}()
-
-	if err := setNonBlock(fd); err != nil {
-		return nil, err
-	}
 
 	if sotype == syscall.SOCK_DGRAM && af != syscall.AF_UNIX {
 		if err := setsockopt(fd, SOL_SOCKET, SO_BROADCAST, 1); err != nil {
@@ -149,29 +148,36 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 		if err != nil {
 			return nil, err
 		}
-		peer, err := getpeername(fd)
+
+		rawpeer, err := getrawpeername(fd)
 		if err != nil {
 			return nil, err
 		}
-		f := os.NewFile(uintptr(fd), "")
-		fd = -1
-		return makePacketConn(f, name, peer), nil
+
+		laddr := sockipToNetAddr(af, sotype)(name)
+		sconn := newFD(fd, af, sotype, socnetwork(af, sotype), laddr, addr, &rawpeer)
+		fd = -1 // now the *netFD owns the file descriptor
+		return makePacketConn(sconn), nil
 	}
 
-	f := os.NewFile(uintptr(fd), "")
-	fd = -1 // now the *os.File owns the file descriptor
-	defer f.Close()
-
-	if inProgress {
-		rawConn, err := f.SyscallConn()
-		if err != nil {
-			return nil, fmt.Errorf("os.(*File).SyscallConn: %w", err)
+	sconn := newFD(fd, af, sotype, socnetwork(af, sotype), sockipToNetAddr(af, sotype)(nil), sockipToNetAddr(af, sotype)(nil), nil)
+	fd = -1 // now the *netFD owns the file descriptor
+	defer func() {
+		if err == nil {
+			return
 		}
 
+		err = sconn.Close()
+	}()
+	if inProgress {
+		rawConn, err := sconn.SyscallConn()
+		if err != nil {
+			return nil, err
+		}
 		errch := make(chan error)
 		go func() {
 			var err error
-			rawConnErr := rawConn.Write(func(fd uintptr) bool {
+			cerr := rawConn.Write(func(fd uintptr) bool {
 				var value int
 				value, err = getsockopt(int(fd), SOL_SOCKET, syscall.SO_ERROR)
 				if err != nil {
@@ -193,10 +199,7 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 					return true
 				}
 			})
-			if err == nil {
-				err = rawConnErr
-			}
-			errch <- err
+			errch <- errorsx.Compact(err, cerr)
 		}()
 
 		select {
@@ -207,7 +210,7 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 		case <-ctx.Done():
 			// This should interrupt the async connect operation handled by the
 			// goroutine.
-			f.Close()
+			sconn.Close()
 			// Wait for the goroutine to complete, we can safely discard the
 			// error here because we don't care about the socket anymore.
 			<-errch
@@ -215,10 +218,5 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 		}
 	}
 
-	c, err := net.FileConn(f)
-	if err != nil {
-		return nil, fmt.Errorf("net.FileConn: %w", err)
-	}
-
-	return makeConn(c)
+	return makeConn(sconn)
 }

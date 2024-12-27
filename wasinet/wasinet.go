@@ -24,7 +24,7 @@ func Hijack() {
 }
 
 func netipaddrportToRaw(nap netip.AddrPort) (rawsocketaddr, error) {
-	if nap.Addr().Is4() {
+	if nap.Addr().Is4() || nap.Addr().Is4In6() {
 		a := sockipaddr[sockip4]{port: uint32(nap.Port()), addr: sockip4{ip: nap.Addr().As4()}}
 		return a.sockaddr(), nil
 	} else {
