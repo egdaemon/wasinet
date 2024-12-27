@@ -113,9 +113,9 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 		}
 	}()
 
-	// if err := setNonBlock(fd); err != nil {
-	// 	return nil, err
-	// }
+	if err := setNonBlock(fd); err != nil {
+		return nil, err
+	}
 
 	if sotype == syscall.SOCK_DGRAM && af != syscall.AF_UNIX {
 		if err := setsockopt(fd, SOL_SOCKET, SO_BROADCAST, 1); err != nil {

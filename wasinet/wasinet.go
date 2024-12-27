@@ -2,12 +2,25 @@ package wasinet
 
 import (
 	"net"
+	"net/http"
 	"net/netip"
+	"time"
 )
 
-// hijack the net.DefaultResolver
+// hijack golang's networks net.DefaultResolver
 func Hijack() {
 	net.DefaultResolver.Dial = DialContext
+	http.DefaultTransport = &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&Dialer{
+			Timeout: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
 }
 
 func netipaddrportToRaw(nap netip.AddrPort) (rawsocketaddr, error) {

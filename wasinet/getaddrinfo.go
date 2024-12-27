@@ -2,6 +2,7 @@ package wasinet
 
 import (
 	"net"
+	"runtime"
 	"strconv"
 	"syscall"
 
@@ -9,13 +10,14 @@ import (
 )
 
 func resolveaddrip(op, network, address string) (res []net.IP, err error) {
-	// log.Println("resolveaddrip", network, address)
 	if ip := net.ParseIP(address); ip != nil {
 		return []net.IP{ip}, nil
 	}
 
+	netip := networkip(network)
+
 	if address == "" && op == oplisten {
-		if networkip(network) == "ip6" {
+		if netip == "ip6" {
 			return []net.IP{net.IPv6zero}, nil
 		}
 
@@ -23,7 +25,7 @@ func resolveaddrip(op, network, address string) (res []net.IP, err error) {
 	}
 
 	if address == "" {
-		if networkip(network) == "ip6" {
+		if netip == "ip6" {
 			return []net.IP{net.IPv6loopback}, nil
 		}
 
@@ -34,12 +36,13 @@ func resolveaddrip(op, network, address string) (res []net.IP, err error) {
 		bufreslength uint32
 	)
 
-	buf := make([]byte, 0, net.IPv6len*8)
+	buf := make([]byte, net.IPv6len*8)
 
-	networkptr, networklen := ffi.String(network)
+	networkptr, networklen := ffi.String(netip)
 	addressptr, addresslen := ffi.String(address)
 	bufptr, buflen := ffi.Slice(buf)
 	bufresptr, _ := ffi.Pointer(&bufreslength)
+
 	errno := sock_getaddrip(
 		networkptr,
 		networklen,
@@ -49,12 +52,19 @@ func resolveaddrip(op, network, address string) (res []net.IP, err error) {
 		buflen,
 		bufresptr,
 	)
+	runtime.KeepAlive(netip)
+	runtime.KeepAlive(address)
+	runtime.KeepAlive(buf)
+
+	if err = ffi.ErrErrno(errno); err != nil {
+		return nil, err
+	}
 
 	for i := 0; i < int(bufreslength); i += net.IPv6len {
 		res = append(res, net.IP(buf[i:i+net.IPv6len]))
 	}
 
-	return res, syscall.Errno(errno)
+	return res, nil
 }
 
 func resolveport(network, service string) (_port int, err error) {
