@@ -80,7 +80,6 @@ func Dial(network, address string) (net.Conn, error) {
 func DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	addrs, err := lookupAddr(ctx, opdial, network, address)
 	if err != nil {
-		log.Println("DERP", err)
 		return nil, netOpErr(opdial, unresolvedaddr(network, address), err)
 	}
 	var addr net.Addr
@@ -88,6 +87,7 @@ func DialContext(ctx context.Context, network, address string) (net.Conn, error)
 	for _, addr = range addrs {
 		conn, err = dialAddr(ctx, addr)
 		if err == nil {
+			log.Println("hello")
 			return conn, nil
 		}
 
@@ -95,7 +95,6 @@ func DialContext(ctx context.Context, network, address string) (net.Conn, error)
 			break
 		}
 	}
-	log.Println("derp", err)
 	return nil, netOpErr(opdial, unresolvedaddr(network, address), err)
 }
 
@@ -129,7 +128,7 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 		}
 	}
 
-	connectAddr, err := socketAddress(addr)
+	connectAddr, err := netaddrToSockaddr(addr)
 	if err != nil {
 		return nil, os.NewSyscallError("sockaddr", err)
 	}
@@ -149,18 +148,18 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 			return nil, err
 		}
 
-		rawpeer, err := getrawpeername(fd)
-		if err != nil {
+		laddr := sockipToNetAddr(af, sotype)(name)
+
+		log.Println("SOCKDGRAM", addr)
+		sconn := newFD(fd, af, sotype, socnetwork(af, sotype), laddr, addr)
+		fd = -1 // now the *netFD owns the file descriptor
+		if err = sconn.initremote(); err != nil {
 			return nil, err
 		}
-
-		laddr := sockipToNetAddr(af, sotype)(name)
-		sconn := newFD(fd, af, sotype, socnetwork(af, sotype), laddr, addr, &rawpeer)
-		fd = -1 // now the *netFD owns the file descriptor
 		return makePacketConn(sconn), nil
 	}
 
-	sconn := newFD(fd, af, sotype, socnetwork(af, sotype), sockipToNetAddr(af, sotype)(nil), sockipToNetAddr(af, sotype)(nil), nil)
+	sconn := newFD(fd, af, sotype, socnetwork(af, sotype), nil, nil)
 	fd = -1 // now the *netFD owns the file descriptor
 	defer func() {
 		if err == nil {

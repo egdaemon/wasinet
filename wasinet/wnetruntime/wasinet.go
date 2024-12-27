@@ -137,7 +137,7 @@ func (t network) GetSocketOption(ctx context.Context, fd int, level, name int, v
 }
 
 func (t network) Shutdown(ctx context.Context, fd, how int) error {
-	slog.Log(ctx, slog.LevelDebug, "sock_Shutdown", slog.Int("fd", fd), slog.Int("how", how))
+	slog.Log(ctx, slog.LevelDebug, "sock_shutdown", slog.Int("fd", fd), slog.Int("how", how))
 	return unix.Shutdown(fd, how)
 }
 

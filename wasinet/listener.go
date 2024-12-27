@@ -27,7 +27,7 @@ func Listen(network, address string) (net.Listener, error) {
 	}
 
 	firstaddr := addrs[0]
-
+	log.Println("checkpoint")
 	lstn, err := listenAddr(firstaddr)
 	return lstn, netOpErr(oplisten, firstaddr, err)
 }
@@ -69,7 +69,7 @@ func listenAddr(addr net.Addr) (net.Listener, error) {
 		return nil, err
 	}
 
-	bindAddr, err := socketAddress(addr)
+	bindAddr, err := netaddrToSockaddr(addr)
 	if err != nil {
 		return nil, os.NewSyscallError("bind", err)
 	}
@@ -122,7 +122,7 @@ func listenPacketAddr(addr net.Addr) (net.PacketConn, error) {
 		return nil, err
 	}
 
-	bindAddr, err := socketAddress(addr)
+	bindAddr, err := netaddrToSockaddr(addr)
 	if err != nil {
 		return nil, os.NewSyscallError("bind", err)
 	}
@@ -138,7 +138,7 @@ func listenPacketAddr(addr net.Addr) (net.PacketConn, error) {
 	if laddr == nil {
 		return nil, fmt.Errorf("unsupported address")
 	}
-	sconn := newFD(fd, af, sotype, socnetwork(af, sotype), laddr, nil, nil)
+	sconn := newFD(fd, af, sotype, socnetwork(af, sotype), laddr, nil)
 	fd = -1 // now the *netFD owns the file descriptor
 	return makePacketConn(sconn), nil
 }
@@ -150,6 +150,7 @@ func (l *listener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return makeConn(c)
 }
 
@@ -382,6 +383,8 @@ func setNetAddr(sotype int, dst net.Addr, src sockaddr) {
 			a.Net = "unixgram"
 		}
 		a.Name = sockaddrName(src)
+	default:
+		log.Printf("unable to set addr: %T\n", dst)
 	}
 }
 
@@ -406,13 +409,15 @@ func makeConn(c net.Conn) (_ net.Conn, err error) {
 
 	rawConn, err := syscallConn.SyscallConn()
 	if err != nil {
-		c.Close()
 		return nil, fmt.Errorf("syscall.Conn.SyscallConn: %w", err)
 	}
 	cerr := rawConn.Control(func(fd uintptr) {
-		var addr sockaddr
-		var peer sockaddr
-
+		var (
+			// netfd *netFD
+			addr sockaddr
+			peer sockaddr
+		)
+		log.Printf("conn initializing %T\n", c)
 		if addr, err = getsockname(int(fd)); err != nil {
 			err = os.NewSyscallError("getsockname", err)
 			return
@@ -423,12 +428,18 @@ func makeConn(c net.Conn) (_ net.Conn, err error) {
 			return
 		}
 
+		setNetAddr(syscall.SOCK_STREAM, c.LocalAddr(), addr)
+		setNetAddr(syscall.SOCK_STREAM, c.RemoteAddr(), peer)
+
+		if c, err = netFDFromNetConn(int(fd), c); err != nil {
+			return
+			// } else {
+			// 	c = netfd
+		}
+
 		if _, unix := addr.(*sockaddrUnix); unix {
 			c = &unixConn{Conn: c}
 		}
-
-		setNetAddr(syscall.SOCK_STREAM, c.LocalAddr(), addr)
-		setNetAddr(syscall.SOCK_STREAM, c.RemoteAddr(), peer)
 
 	})
 
@@ -453,4 +464,26 @@ func sockaddrName(addr sockaddr) string {
 	default:
 		return ""
 	}
+}
+
+func netFDFromNetConn(fd int, c net.Conn) (net.Conn, error) {
+	log.Printf("translating to netfd %d %T %s %s\n", fd, c, c.LocalAddr(), c.RemoteAddr())
+	a, ok := c.(*netFD)
+	if ok {
+		a.initremote()
+		return a, nil
+	}
+
+	return c, nil
+	// addr := c.LocalAddr()
+
+	// family := netaddrfamily(addr)
+	// sotype, err := socketType(addr)
+	// if err != nil {
+	// 	return nil, os.NewSyscallError("socket", err)
+	// }
+
+	// nfd := newFD(fd, family, sotype, addr.Network(), addr, c.RemoteAddr())
+	// nfd.underlying = c
+	// return nfd, nil
 }

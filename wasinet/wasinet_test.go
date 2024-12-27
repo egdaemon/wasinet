@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/egdaemon/wasinet/wasinet"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -33,10 +34,9 @@ func (t udpaddr) Addr() net.Addr {
 
 func listentcp(t testing.TB, network, address string) net.Listener {
 	li, err := wasinet.Listen(network, address)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	log.Println("checkpoint")
+	require.NoError(t, err)
+	log.Println("checkpoint")
 	go func() {
 		for conn, err := li.Accept(); err == nil; conn, err = li.Accept() {
 			server, client := net.Pipe()
@@ -54,6 +54,7 @@ func listentcp(t testing.TB, network, address string) net.Listener {
 		}
 	}()
 	t.Cleanup(func() {
+		log.Println("DERP DERP")
 		if err := li.Close(); err != nil {
 			t.Fatal(err)
 		}

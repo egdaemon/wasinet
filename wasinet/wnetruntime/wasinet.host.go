@@ -322,8 +322,6 @@ func SocketShutdown(fn ShutdownFn) ShutdownHostFn {
 	return func(
 		ctx context.Context, m ffi.Memory, fd, how int32,
 	) syscall.Errno {
-		log.Println("socket shutdown initated")
-		defer log.Println("socket shutdown completed")
 		return ffi.Errno(fn(ctx, int(fd), int(how)))
 	}
 }
@@ -348,9 +346,6 @@ func SocketAddrPort(portfn AddrPortFn) AddrPortHostFn {
 			err  error
 			port int
 		)
-
-		log.Println("socket addrport initated")
-		defer log.Println("socket addport completed")
 
 		network, err := ffi.StringRead(m, unsafe.Pointer(networkptr), networklen)
 		if err != nil {
@@ -393,9 +388,6 @@ func SocketAddrIP(fn AddrIPFn) AddrIPHostFn {
 			ip  []net.IP
 			buf []byte
 		)
-
-		log.Println("socket addrip initated")
-		defer log.Println("socket addrip completed")
 
 		network, err := ffi.StringRead(m, unsafe.Pointer(networkptr), networklen)
 		if err != nil {

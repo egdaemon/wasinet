@@ -135,7 +135,6 @@ func sock_recv_from(
 ) syscall.Errno {
 	vecs := errorsx.Must(ffi.SliceRead[[]byte](ffi.Native{}, iovs, iovslen))
 	for {
-		log.Println("recvMsgBuffers", fd, iflags)
 		n, _, roflags, sa, err := unix.RecvmsgBuffers(int(fd), vecs, nil, int(iflags))
 		switch err {
 		case nil:
@@ -147,6 +146,7 @@ func sock_recv_from(
 			return ffi.Errno(err)
 		}
 
+		log.Println("derp", sa, err)
 		addr, err := Sockaddr(sa)
 		if err != nil {
 			log.Println("failed", err)

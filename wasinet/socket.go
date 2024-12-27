@@ -3,6 +3,7 @@ package wasinet
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -296,13 +297,13 @@ func (na *unresolvedaddress) Network() string { return na.network }
 func (na *unresolvedaddress) String() string  { return na.address }
 
 func setNonBlock(fd int) error {
-	if err := syscall.SetNonblock(fd, true); err != nil {
-		return os.NewSyscallError("setnonblock", err)
-	}
+	// if err := syscall.SetNonblock(fd, true); err != nil {
+	// 	return os.NewSyscallError("setnonblock", err)
+	// }
 	return nil
 }
 
-func socketAddress(addr net.Addr) (sockaddr, error) {
+func netaddrToSockaddr(addr net.Addr) (sockaddr, error) {
 	ipaddr := func(ip net.IP, zone string, port int) (sockaddr, error) {
 		if ipv4 := ip.To4(); ipv4 != nil {
 			return sockipaddr[sockip4]{addr: sockip4{ip: ([4]byte)(ipv4)}, port: uint32(port)}, nil
@@ -365,16 +366,6 @@ func setReuseAddress(fd int) error {
 
 type unixConn struct {
 	net.Conn
-	laddr net.UnixAddr
-	raddr net.UnixAddr
-}
-
-func (c *unixConn) LocalAddr() net.Addr {
-	return &c.laddr
-}
-
-func (c *unixConn) RemoteAddr() net.Addr {
-	return &c.raddr
 }
 
 func (c *unixConn) CloseRead() error {
@@ -546,7 +537,15 @@ func sockipToNetAddr(family, sotype int) func(sa sockaddr) net.Addr {
 	return func(sa sockaddr) net.Addr { return nil }
 }
 
-func newFD(sysfd int, family int, sotype int, net string, laddr, raddr net.Addr, rraddr *rawsocketaddr) *netFD {
+func newFD(sysfd int, family int, sotype int, net string, laddr, raddr net.Addr) *netFD {
+	if laddr == nil {
+		laddr = sockipToNetAddr(family, sotype)(nil)
+	}
+
+	if raddr == nil {
+		raddr = sockipToNetAddr(family, sotype)(nil)
+	}
+
 	s := &netFD{
 		fd:     sysfd,
 		family: family,
@@ -554,6 +553,7 @@ func newFD(sysfd int, family int, sotype int, net string, laddr, raddr net.Addr,
 		net:    net,
 		laddr:  laddr,
 		raddr:  raddr,
+		rraddr: new(rawsocketaddr),
 	}
 	runtime.SetFinalizer(s, (*netFD).Close)
 	return s
@@ -586,7 +586,8 @@ func (t netsysconn) Write(f func(fd uintptr) (done bool)) error {
 var _ syscall.RawConn = netsysconn{}
 
 type netFD struct {
-	fd int
+	underlying net.Conn
+	fd         int
 	// immutable until Close
 	family int
 	sotype int
@@ -624,7 +625,30 @@ func (fd *netFD) Read(p []byte) (n int, err error) {
 	return n, wrapSyscallError(readSyscallName, err)
 }
 
+func (fd *netFD) initremote() error {
+	var (
+		saddr sockaddr
+	)
+	log.Println("initremote initiated", fd.raddr, fmt.Sprintf("%+v", errorsx.Stack()))
+	if fd.raddr == nil {
+		log.Println("checkpoint")
+		return fmt.Errorf("no remote address")
+	}
+
+	saddr, err := netaddrToSockaddr(fd.raddr)
+	if err != nil {
+		log.Println("checkpoint", err)
+		return err
+	}
+
+	*fd.rraddr = saddr.sockaddr()
+	return nil
+}
+
 func (fd *netFD) Write(p []byte) (n int, err error) {
+	if fd.rraddr == nil {
+		return 0, fmt.Errorf("invalid socket")
+	}
 	n, err = sendto(fd.fd, [][]byte{p}, *fd.rraddr, 0)
 	return n, wrapSyscallError(writeSyscallName, err)
 }
@@ -646,7 +670,7 @@ func (fd *netFD) LocalAddr() net.Addr {
 }
 
 func (fd *netFD) RemoteAddr() net.Addr {
-	return fd.laddr
+	return fd.raddr
 }
 
 // wrapSyscallError takes an error and a syscall name. If the error is
