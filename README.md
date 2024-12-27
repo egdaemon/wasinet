@@ -1,3 +1,6 @@
+### not yet ready for use
+still diagnosing some issues. =)
+
 ### wasi networking functionality for golang.
 This is a quick and simple socket implementation for golang in wasi that doesnt try to interopt with the wider ecosystem
 that currently exists.
