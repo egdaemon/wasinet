@@ -4,10 +4,13 @@ import (
 	"testing"
 
 	"github.com/egdaemon/wasinet/wasinet"
+	"github.com/egdaemon/wasinet/wasinet/testx"
 )
 
 func checkListen(t *testing.T, network, address string) {
-	li, err := wasinet.Listen(network, address)
+	ctx, done := testx.WithDeadline(t)
+	defer done()
+	li, err := wasinet.Listen(ctx, network, address)
 	if err != nil {
 		t.Fatal(err)
 	}

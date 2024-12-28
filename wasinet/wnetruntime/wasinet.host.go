@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/egdaemon/wasinet/wasinet"
 	"github.com/egdaemon/wasinet/wasinet/ffi"
 	"github.com/egdaemon/wasinet/wasinet/ffierrors"
+	"github.com/egdaemon/wasinet/wasinet/stdlib/wasip1syscall"
 	"golang.org/x/sys/unix"
 )
 
@@ -60,7 +60,7 @@ func SocketBind(bind BindFn) BindHostFn {
 		addr uintptr,
 		addrlen uint32,
 	) syscall.Errno {
-		sa, err := wasinet.ReadSockaddr(m, unsafe.Pointer(addr), addrlen)
+		sa, err := wasip1syscall.ReadSockaddr(m, unsafe.Pointer(addr), addrlen)
 		if err != nil {
 			return ffierrors.Errno(err)
 		}
@@ -79,7 +79,7 @@ func SocketConnect(fn ConnectFn) ConnectHostFn {
 		addr uintptr,
 		addrlen uint32,
 	) syscall.Errno {
-		sa, err := wasinet.ReadSockaddr(m, unsafe.Pointer(addr), addrlen)
+		sa, err := wasip1syscall.ReadSockaddr(m, unsafe.Pointer(addr), addrlen)
 		if err != nil {
 			return ffierrors.Errno(err)
 		}
@@ -136,7 +136,7 @@ func SocketSendTo(fn SendToFn) SendToHostFn {
 			return ffierrors.Errno(err)
 		}
 
-		sa, err := wasinet.ReadSockaddr(m, unsafe.Pointer(addrptr), addrlen)
+		sa, err := wasip1syscall.ReadSockaddr(m, unsafe.Pointer(addrptr), addrlen)
 		if err != nil {
 			log.Println("failed", err)
 			return ffierrors.Errno(err)
@@ -193,7 +193,7 @@ func SocketRecvFrom(fn RecvFromFn) RecvFromHostFn {
 		}
 
 		if sa != nil { // connected sockets
-			addr, err := wasinet.Sockaddr(sa)
+			addr, err := wasip1syscall.Sockaddr(sa)
 			if err != nil {
 				return ffierrors.Errno(err)
 			}
@@ -284,7 +284,7 @@ func SocketLocalAddr(fn LocalAddrFn) LocalAddrHostFn {
 			return ffierrors.Errno(err)
 		}
 
-		addr, err := wasinet.Sockaddr(sa)
+		addr, err := wasip1syscall.Sockaddr(sa)
 		if err != nil {
 			return ffierrors.Errno(err)
 		}
@@ -312,7 +312,7 @@ func SocketPeerAddr(fn PeerAddrFn) PeerAddrHostFn {
 		if err != nil {
 			return ffierrors.Errno(err)
 		}
-		addr, err := wasinet.Sockaddr(sa)
+		addr, err := wasip1syscall.Sockaddr(sa)
 		if err != nil {
 			return ffierrors.Errno(err)
 		}

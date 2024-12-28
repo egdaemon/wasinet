@@ -1,7 +1,9 @@
-package wasinet
+package wasip1syscall
 
 import (
+	"context"
 	"net"
+	"os"
 	"runtime"
 	"strconv"
 	"syscall"
@@ -10,7 +12,68 @@ import (
 	"github.com/egdaemon/wasinet/wasinet/ffierrors"
 )
 
-func resolveaddrip(op, network, address string) (res []net.IP, err error) {
+func networkip(network string) string {
+	switch network {
+	case "tcp", "udp":
+		return "ip"
+	case "tcp4", "udp4":
+		return "ip4"
+	case "tcp6", "udp6":
+		return "ip6"
+	default:
+		return ""
+	}
+}
+
+func netaddr(network string, ip net.IP, port int) net.Addr {
+	switch network {
+	case "tcp", "tcp4", "tcp6":
+		return &net.TCPAddr{IP: ip, Port: port}
+	case "udp", "udp4", "udp6":
+		return &net.UDPAddr{IP: ip, Port: port}
+	}
+	return nil
+}
+
+func LookupAddress(_ context.Context, op, network, address string) ([]net.Addr, error) {
+	switch network {
+	case "unix", "unixgram":
+		return []net.Addr{&net.UnixAddr{Name: address, Net: network}}, nil
+	default:
+	}
+
+	hostname, service, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+
+	port, err := ResolvePort(network, service)
+	if err != nil {
+		return nil, os.NewSyscallError("resolveport", err)
+	}
+
+	ips, err := ResolveAddrip(op, network, hostname)
+	if err != nil {
+		return nil, os.NewSyscallError("resolveaddrip", err)
+	}
+
+	addrs := make([]net.Addr, 0, len(ips))
+	for _, ip := range ips {
+		addrs = append(addrs, netaddr(network, ip, port))
+	}
+
+	if len(addrs) == 0 {
+		return nil, &net.DNSError{
+			Err:        "lookup failed",
+			Name:       hostname,
+			IsNotFound: true,
+		}
+	}
+
+	return addrs, nil
+}
+
+func ResolveAddrip(op, network, address string) (res []net.IP, err error) {
 	if ip := net.ParseIP(address); ip != nil {
 		return []net.IP{ip}, nil
 	}
@@ -68,7 +131,7 @@ func resolveaddrip(op, network, address string) (res []net.IP, err error) {
 	return res, nil
 }
 
-func resolveport(network, service string) (_port int, err error) {
+func ResolvePort(network, service string) (_port int, err error) {
 	var (
 		port uint32
 	)

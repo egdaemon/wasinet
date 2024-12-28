@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
-	"net/netip"
 	"time"
 )
 
@@ -25,12 +24,34 @@ func Hijack() {
 	}
 }
 
-func netipaddrportToRaw(nap netip.AddrPort) (rawsocketaddr, error) {
-	if nap.Addr().Is4() || nap.Addr().Is4In6() {
-		a := sockipaddr[sockip4]{port: uint32(nap.Port()), addr: sockip4{ip: nap.Addr().As4()}}
-		return a.sockaddr(), nil
-	} else {
-		a := sockipaddr[sockip6]{port: uint32(nap.Port()), addr: sockip6{ip: nap.Addr().As16()}}
-		return a.sockaddr(), nil
+// func netipaddrportToRaw(nap netip.AddrPort) (rawsocketaddr, error) {
+// 	if nap.Addr().Is4() || nap.Addr().Is4In6() {
+// 		a := sockipaddr[sockip4]{port: uint32(nap.Port()), addr: sockip4{ip: nap.Addr().As4()}}
+// 		return a.sockaddr(), nil
+// 	} else {
+// 		a := sockipaddr[sockip6]{port: uint32(nap.Port()), addr: sockip6{ip: nap.Addr().As16()}}
+// 		return a.sockaddr(), nil
+// 	}
+// }
+
+func netOpErr(op string, addr net.Addr, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	return &net.OpError{
+		Op:   op,
+		Net:  addr.Network(),
+		Addr: addr,
+		Err:  err,
 	}
 }
+
+func unresolvedaddr(network, address string) net.Addr {
+	return &unresolvedaddress{network: network, address: address}
+}
+
+type unresolvedaddress struct{ network, address string }
+
+func (na *unresolvedaddress) Network() string { return na.network }
+func (na *unresolvedaddress) String() string  { return na.address }
