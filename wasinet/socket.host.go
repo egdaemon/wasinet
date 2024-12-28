@@ -3,7 +3,7 @@
 package wasinet
 
 import (
-	"log"
+	"log/slog"
 	"strconv"
 	"syscall"
 	"unsafe"
@@ -44,7 +44,7 @@ func Sockaddr(sa unix.Sockaddr) (zero rawsocketaddr, error error) {
 		}
 		return (&sockaddrUnix{name: name}).sockaddr(), nil
 	default:
-		log.Printf("unspoorted unix.Sockaddr: %T\n", t)
+		slog.Debug("unsupported unix.Sockaddr", slog.Any("sa", sa))
 		return zero, syscall.EINVAL
 	}
 }

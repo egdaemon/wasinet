@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/egdaemon/wasinet/wasinet"
-	"github.com/egdaemon/wasinet/wasinet/internal/testx"
+	"github.com/egdaemon/wasinet/wasinet/testx"
 )
 
 func checkDial(ctx context.Context, t testing.TB, li addrconn) {

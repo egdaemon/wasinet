@@ -10,12 +10,13 @@ import (
 	"testing"
 
 	"github.com/egdaemon/wasinet/wasinet"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
+	slog.SetLogLoggerLevel(slog.LevelDebug)
+	log.SetFlags(log.Flags() | log.Lshortfile)
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
-	log.SetFlags(log.Lshortfile)
-	log.SetOutput(os.Stderr)
 	os.Exit(m.Run())
 }
 
@@ -33,10 +34,7 @@ func (t udpaddr) Addr() net.Addr {
 
 func listentcp(t testing.TB, network, address string) net.Listener {
 	li, err := wasinet.Listen(network, address)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	require.NoError(t, err)
 	go func() {
 		for conn, err := li.Accept(); err == nil; conn, err = li.Accept() {
 			server, client := net.Pipe()
@@ -54,9 +52,7 @@ func listentcp(t testing.TB, network, address string) net.Listener {
 		}
 	}()
 	t.Cleanup(func() {
-		if err := li.Close(); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, li.Close())
 	})
 
 	return li
@@ -64,14 +60,10 @@ func listentcp(t testing.TB, network, address string) net.Listener {
 
 func listenudp(t testing.TB, network, address string) addrconn {
 	li, err := wasinet.ListenPacket(network, address)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		if err := li.Close(); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, li.Close())
 	})
 
 	return udpaddr{PacketConn: li}

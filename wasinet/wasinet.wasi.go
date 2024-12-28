@@ -88,6 +88,10 @@ func sock_determine_host_af_family(
 	af int32,
 ) int32
 
+//go:wasmimport wasinet_v0 sock_determine_host_af_family
+//go:noescape
+func sock_init(fd int32) syscall.Errno
+
 func netaddrfamily(addr net.Addr) int {
 	translated := func(v int32) int {
 		return int(sock_determine_host_af_family(v))
