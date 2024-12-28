@@ -9,9 +9,10 @@ import (
 	"net"
 	"net/netip"
 	"syscall"
-	"unsafe"
+	"time"
 
 	"github.com/egdaemon/wasinet/wasinet/ffi"
+	"github.com/egdaemon/wasinet/wasinet/ffierrors"
 	"github.com/egdaemon/wasinet/wasinet/internal/errorsx"
 	"github.com/egdaemon/wasinet/wasinet/internal/langx"
 	"golang.org/x/sys/unix"
@@ -76,8 +77,9 @@ type network struct {
 }
 
 func (t network) Open(ctx context.Context, af, socktype, protocol int) (fd int, err error) {
+	// syscall.SOCK_NONBLOCK
 	slog.Log(ctx, slog.LevelDebug, "sock_open", slog.Int("af", af), slog.Int("socktype", socktype), slog.Int("protocol", protocol))
-	return unix.Socket(af, socktype|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, protocol)
+	return unix.Socket(af, socktype|syscall.SOCK_CLOEXEC, protocol)
 }
 
 func (t network) Bind(ctx context.Context, fd int, sa unix.Sockaddr) error {
@@ -107,13 +109,16 @@ func (t network) PeerAddr(ctx context.Context, fd int) (_ unix.Sockaddr, err err
 
 func (t network) SetSocketOption(ctx context.Context, fd int, level, name int, value []byte) error {
 	switch name {
-	case syscall.SO_LINGER: // this is untested.
+	case syscall.SO_LINGER, syscall.SO_RCVTIMEO, syscall.SO_SNDTIMEO:
 		v := &unix.Timeval{}
-		tvptr, tvlen := ffi.Pointer(v)
-		if err := ffi.RawRead(ffi.Native{}, ffi.Native{}, tvptr, unsafe.Pointer(&value), tvlen); err != nil {
+		vptr, vlen := ffi.Slice(value)
+		tvptr, _ := ffi.Pointer(v)
+		if err := ffi.RawRead(ffi.Native{}, ffi.Native{}, tvptr, vptr, vlen); err != nil {
 			return err
 		}
-		return unix.SetsockoptTimeval(fd, level, name, v)
+		errno := unix.SetsockoptTimeval(fd, level, name, v)
+		slog.Log(ctx, slog.LevelDebug, "sock_setsockopt_timeval", slog.Int("fd", fd), slog.Int("level", level), slog.Int("name", name), slog.Any("value", v), slog.Int("errno", int(ffierrors.Errno(errno))))
+		return errno
 	case syscall.SO_BINDTODEVICE: // this is untested.
 		value := errorsx.Must(ffi.StringReadNative(ffi.Slice(value)))
 		slog.Log(ctx, slog.LevelDebug, "sock_setsockopt_string", slog.Int("fd", fd), slog.Int("level", level), slog.Int("name", name), slog.String("value", value))
@@ -152,13 +157,17 @@ func (t network) AddrPort(ctx context.Context, network string, service string) (
 }
 
 func (t network) RecvFrom(ctx context.Context, fd int, vecs [][]byte, flags int) (int, int, unix.Sockaddr, error) {
+	ctx, done := context.WithTimeout(ctx, time.Second)
+	defer done()
 	for {
+		// fmt.Println("derp derp")
 		slog.Log(ctx, slog.LevelDebug, "recvMsgBuffers", slog.Int("fd", fd), slog.Int("flags", flags))
 		n, _, roflags, sa, err := unix.RecvmsgBuffers(fd, vecs, nil, flags)
 		if err == nil {
 			return n, roflags, sa, nil
 		}
 
+		// fmt.Println("ERR", err, int(ffierrors.Errno(err)), syscall.EINTR)
 		switch err {
 		case syscall.EINTR, syscall.EWOULDBLOCK:
 		default:

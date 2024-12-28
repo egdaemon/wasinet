@@ -4,6 +4,7 @@ package wnetruntime
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"syscall"
@@ -179,6 +180,8 @@ func SocketRecvFrom(fn RecvFromFn) RecvFromHostFn {
 		nread uintptr,
 		oflags uintptr,
 	) syscall.Errno {
+		fmt.Println("Recv initiated")
+		defer fmt.Println("Recv completed")
 		vecs, err := vectorread[byte](m, iovsptr, iovslen)
 		if err != nil {
 			return ffierrors.Errno(err)

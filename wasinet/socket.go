@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
 	"runtime"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -549,13 +551,15 @@ func newFD(sysfd int, family int, sotype int, net string, laddr, raddr net.Addr)
 	}
 
 	s := &netFD{
-		fd:     sysfd,
-		family: family,
-		sotype: sotype,
-		net:    net,
-		laddr:  laddr,
-		raddr:  raddr,
-		rraddr: new(rawsocketaddr),
+		fd:        sysfd,
+		family:    family,
+		sotype:    sotype,
+		net:       net,
+		laddr:     laddr,
+		raddr:     raddr,
+		rraddr:    new(rawsocketaddr),
+		readlock:  &sync.Mutex{},
+		writelock: &sync.Mutex{},
 	}
 	runtime.SetFinalizer(s, (*netFD).Close)
 	return s
@@ -572,7 +576,10 @@ func (t netsysconn) Control(f func(fd uintptr)) error {
 
 func (t netsysconn) Read(f func(fd uintptr) (done bool)) error {
 	for !f(uintptr(t.fd)) {
-		// Tthere are almost certainly bugs here not checking to ensure its open for example.
+		// Tthere are almost certainly bugs here.
+		if !t.ok() {
+			return net.ErrClosed
+		}
 	}
 	return nil
 }
@@ -580,8 +587,12 @@ func (t netsysconn) Read(f func(fd uintptr) (done bool)) error {
 // Write is like Read but for writing.
 func (t netsysconn) Write(f func(fd uintptr) (done bool)) error {
 	for !f(uintptr(t.fd)) {
-		// Tthere are almost certainly bugs here not checking to ensure its open for example.
+		// Tthere are almost certainly bugs here.
+		if !t.ok() {
+			return net.ErrClosed
+		}
 	}
+
 	return nil
 }
 
@@ -591,12 +602,14 @@ type netFD struct {
 	fd   int
 	dead *int
 	// immutable until Close
-	family int
-	sotype int
-	net    string
-	laddr  net.Addr
-	raddr  net.Addr
-	rraddr *rawsocketaddr
+	family    int
+	sotype    int
+	net       string
+	laddr     net.Addr
+	raddr     net.Addr
+	readlock  *sync.Mutex
+	writelock *sync.Mutex
+	rraddr    *rawsocketaddr
 }
 
 func (c *netFD) discard() { c.dead = &c.fd }
@@ -644,7 +657,19 @@ func (fd *netFD) closeWrite() error {
 }
 
 func (fd *netFD) Read(b []byte) (n int, err error) {
+	fd.readlock.Lock()
+	defer fd.readlock.Unlock()
+
+	log.Println("Read initiated", fmt.Sprintf("%+v", errorsx.Stack()))
+	defer log.Println("Read completed")
+	if !fd.ok() {
+		return 0, syscall.EINVAL
+	}
 	n, _, _, err = recvfromSingle(int(fd.fd), b, 0)
+	if n == 0 && err == nil {
+		return n, io.EOF
+	}
+	log.Println("done", n, len(b), err, b)
 	return n, wrapSyscallError(readSyscallName, err)
 }
 
@@ -667,20 +692,49 @@ func (fd *netFD) initremote() error {
 }
 
 func (fd *netFD) Write(p []byte) (n int, err error) {
+	fd.writelock.Lock()
+	defer fd.writelock.Unlock()
+
+	log.Println("Write initiated")
+	defer log.Println("Write completed")
+	if !fd.ok() {
+		return 0, syscall.EINVAL
+	}
 	n, err = sendto(fd.fd, [][]byte{p}, *fd.rraddr, 0)
 	return n, wrapSyscallError(writeSyscallName, err)
 }
 
-func (c *netFD) SetDeadline(t time.Time) error {
-	return nil // TODO
+func (fd *netFD) SetDeadline(t time.Time) error {
+	if !fd.ok() {
+		return syscall.EINVAL
+	}
+
+	ts := time.Until(t)
+	err := errorsx.Compact(
+		sock_setsockopt_timeval(fd.fd, SOL_SOCKET, SO_RCVTIMEO, ts),
+		sock_setsockopt_timeval(fd.fd, SOL_SOCKET, SO_SNDTIMEO, ts),
+	)
+	return err
 }
 
-func (c *netFD) SetReadDeadline(t time.Time) error {
-	return nil // TODO
+func (fd *netFD) SetReadDeadline(t time.Time) error {
+	if !fd.ok() {
+		return syscall.EINVAL
+	}
+
+	ts := time.Until(t)
+	err := sock_setsockopt_timeval(fd.fd, SOL_SOCKET, SO_RCVTIMEO, ts)
+	return err
 }
 
-func (c *netFD) SetWriteDeadline(t time.Time) error {
-	return nil // TODO
+func (fd *netFD) SetWriteDeadline(t time.Time) error {
+	if !fd.ok() {
+		return syscall.EINVAL
+	}
+
+	ts := time.Until(t)
+	err := sock_setsockopt_timeval(fd.fd, SOL_SOCKET, SO_SNDTIMEO, ts)
+	return err
 }
 
 func (fd *netFD) LocalAddr() net.Addr {
@@ -698,4 +752,17 @@ func wrapSyscallError(name string, err error) error {
 		err = os.NewSyscallError(name, err)
 	}
 	return err
+}
+
+func sock_setsockopt_timeval(fd int, level uint32, opt uint32, d time.Duration) syscall.Errno {
+	type Timeval struct {
+		Sec  int64
+		Usec int64
+	}
+
+	secs := d.Truncate(time.Second)
+	milli := d - secs
+	tval := &Timeval{Sec: int64(secs / time.Second), Usec: milli.Milliseconds()}
+	tvalptr, tvallen := ffi.Pointer(tval)
+	return sock_setsockopt(int32(fd), level, opt, tvalptr, tvallen)
 }

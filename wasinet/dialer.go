@@ -3,6 +3,7 @@ package wasinet
 import (
 	"context"
 	"errors"
+	"log"
 	"log/slog"
 	"net"
 	"os"
@@ -225,6 +226,22 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	slog.Debug("------------ critical area initiated ------------")
 	defer slog.Debug("------------ critical area completed ------------")
 
-	return makeConn(sconn)
+	log.Printf("DERP %T\n", sconn.laddr)
+	// switch fd.laddr.(type) {
+	// case *TCPAddr:
+	// 	return newTCPConn(fd, defaultTCPKeepAliveIdle, KeepAliveConfig{}, testPreHookSetKeepAlive, testHookSetKeepAlive), nil
+	// case *UDPAddr:
+	// 	return newUDPConn(fd), nil
+	// case *IPAddr:
+	// 	return newIPConn(fd), nil
+	// case *UnixAddr:
+	// 	return newUnixConn(fd), nil
+	// }
+	derp(sconn.fd)
+	sconn.discard()
+	f := os.NewFile(uintptr(sconn.fd), "")
+	return makeConn(errorsx.Must(net.FileConn(f)))
+	// return net.RawFileConn(sconn.fd)
+	// return makeConn(sconn)
 
 }

@@ -4,6 +4,7 @@ package wasinet
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"syscall"
@@ -312,6 +313,8 @@ func rawtosockaddr(rsa *rawsocketaddr) (sockaddr, error) {
 	}
 }
 
-func sock_init(fd int32) syscall.Errno {
-	return ffierrors.Errno(unix.SetNonblock(int(fd), true))
+//go:linkname derp net.fd_fdstat_get_type
+func derp(fd int) (uint8, error) {
+	fmt.Println("DERP DERP", fd)
+	return 0, nil
 }
