@@ -3,7 +3,7 @@ package wazeronet_test
 import (
 	"context"
 	"crypto/rand"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +17,14 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
+func TestMain(m *testing.M) {
+	slog.SetLogLoggerLevel(slog.LevelDebug)
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
+	// log.SetFlags(log.Lshortfile)
+	// log.SetOutput(io.Discard)
+	os.Exit(m.Run())
+}
+
 func compile(ctx context.Context, in string, output string) (err error) {
 	cmd := exec.CommandContext(ctx, "go", "build", "-trimpath", "-o", output, in)
 	cmd.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
@@ -28,7 +36,6 @@ func compile(ctx context.Context, in string, output string) (err error) {
 }
 
 func compileAndRun(ctx context.Context, t *testing.T, path string) error {
-
 	// Create a new WebAssembly Runtime.
 	runtime := wazero.NewRuntimeWithConfig(
 		ctx,
@@ -60,19 +67,17 @@ func compileAndRun(ctx context.Context, t *testing.T, path string) error {
 		return err
 	}
 
-	log.Println("checkpoint")
 	wasi, err := os.ReadFile(compiled)
 	if err != nil {
 		return err
 	}
 
-	log.Println("checkpoint")
 	c, err := runtime.CompileModule(ctx, wasi)
 	if err != nil {
 		return err
 	}
 	defer c.Close(ctx)
-	log.Println("checkpoint")
+
 	m, err := runtime.InstantiateModule(ctx, c, mcfg.WithName(path))
 	if err != nil {
 		return err

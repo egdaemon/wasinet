@@ -61,9 +61,6 @@ func listenAddr(addr net.Addr) (net.Listener, error) {
 		}
 	}()
 
-	if err := setNonBlock(fd); err != nil {
-		return nil, err
-	}
 	if err := setReuseAddress(fd); err != nil {
 		return nil, err
 	}
@@ -114,9 +111,6 @@ func listenPacketAddr(addr net.Addr) (net.PacketConn, error) {
 		}
 	}()
 
-	if err := setNonBlock(fd); err != nil {
-		return nil, err
-	}
 	if err := setReuseAddress(fd); err != nil {
 		return nil, err
 	}
@@ -177,13 +171,8 @@ func makePacketConn(f *netFD) *packetConn {
 	return &packetConn{conn: f}
 }
 
-type netconn interface {
-	syscall.Conn
-	net.Conn
-}
-
 type packetConn struct {
-	conn netconn
+	conn *netFD
 }
 
 func (c *packetConn) Close() error {
@@ -192,16 +181,13 @@ func (c *packetConn) Close() error {
 
 func (c *packetConn) CloseRead() (err error) {
 	cerr := errorsx.Must(c.conn.SyscallConn()).Control(func(fd uintptr) {
-		err = sock_shutdown(int32(fd), syscall.SHUT_RD)
-		// err = c.conn.closeRead()
+		err = c.conn.closeRead()
 	})
 	return errorsx.Compact(cerr, err)
 }
-
 func (c *packetConn) CloseWrite() (err error) {
 	cerr := errorsx.Must(c.conn.SyscallConn()).Control(func(fd uintptr) {
-		err = sock_shutdown(int32(fd), syscall.SHUT_WR)
-		// err = c.conn.closeWrite()
+		err = c.conn.closeWrite()
 	})
 	return errorsx.Compact(cerr, err)
 }
@@ -225,7 +211,7 @@ func (c *packetConn) ReadMsgUnix(b, oob []byte) (n, oobn, flags int, addr *net.U
 	rawConnErr := errorsx.Must(c.conn.SyscallConn()).Read(func(fd uintptr) (done bool) {
 		var raw rawsocketaddr
 		var oflags int32
-		n, raw, oflags, err = recvfrom(int(fd), [][]byte{b}, 0)
+		n, raw, oflags, err = recvfromSingle(int(fd), b, 0)
 		if err == syscall.EAGAIN {
 			return false
 		}
@@ -261,7 +247,7 @@ func (c *packetConn) ReadMsgUDPAddrPort(b, oob []byte) (n, oobn, flags int, addr
 	werr := errorsx.Must(c.conn.SyscallConn()).Read(func(fd uintptr) (done bool) {
 		var raw rawsocketaddr
 		var oflags int32
-		n, raw, oflags, err = recvfrom(int(fd), [][]byte{b}, 0)
+		n, raw, oflags, err = recvfromSingle(int(fd), b, 0)
 		if err == syscall.EAGAIN {
 			return false
 		}
@@ -420,11 +406,10 @@ func makeConn(c net.Conn) (x net.Conn, err error) {
 	}
 	cerr := rawConn.Control(func(fd uintptr) {
 		var (
-			// netfd *netFD
 			addr sockaddr
 			peer sockaddr
 		)
-		log.Printf("conn initializing %T\n", c)
+
 		if addr, err = getsockname(int(fd)); err != nil {
 			err = os.NewSyscallError("getsockname", err)
 			return
@@ -438,8 +423,8 @@ func makeConn(c net.Conn) (x net.Conn, err error) {
 		setNetAddr(syscall.SOCK_STREAM, c.LocalAddr(), addr)
 		setNetAddr(syscall.SOCK_STREAM, c.RemoteAddr(), peer)
 
-		if c, err = netFDFromNetConn(int(fd), c); err != nil {
-			return
+		if a, ok := c.(*netFD); ok {
+			a.initremote()
 		}
 
 		if _, unix := addr.(*sockaddrUnix); unix {
@@ -468,15 +453,4 @@ func sockaddrName(addr sockaddr) string {
 	default:
 		return ""
 	}
-}
-
-func netFDFromNetConn(fd int, c net.Conn) (net.Conn, error) {
-	log.Printf("translating to netfd %d %T %s %s\n", fd, c, c.LocalAddr(), c.RemoteAddr())
-	a, ok := c.(*netFD)
-	if ok {
-		a.initremote()
-		return a, nil
-	}
-
-	return c, nil
 }

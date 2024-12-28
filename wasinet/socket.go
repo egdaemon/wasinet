@@ -88,7 +88,6 @@ func listen(fd int, backlog int) error {
 }
 
 func connect(fd int, sa sockaddr) error {
-	log.Printf("connect %d %+v\n", fd, errorsx.Stack())
 	rsa := sa.sockaddr()
 	rawaddr, rawaddrlen := ffi.Pointer(&rsa)
 	err := ffierrors.Error(sock_connect(int32(fd), rawaddr, rawaddrlen))
@@ -113,8 +112,8 @@ func setsockopt(fd, level, opt int, value int) error {
 
 func getrawsockname(fd int) (rsa rawsocketaddr, err error) {
 	rsaptr, rsalength := ffi.Pointer(&rsa)
-	errno := sock_getlocaladdr(int32(fd), rsaptr, rsalength)
-	return rsa, ffierrors.Error(errno)
+	errno := ffierrors.Error(sock_getlocaladdr(int32(fd), rsaptr, rsalength))
+	return rsa, errno
 }
 
 func getsockname(fd int) (sa sockaddr, err error) {
@@ -195,6 +194,10 @@ type rawsocketaddr struct {
 	addr   [126]byte
 }
 
+func recvfromSingle(fd int, b []byte, flags int32) (n int, addr rawsocketaddr, oflags int32, err error) {
+	return recvfrom(fd, [][]byte{b}, flags)
+}
+
 func recvfrom(fd int, iovs [][]byte, flags int32) (n int, addr rawsocketaddr, oflags int32, err error) {
 	vecs := ffi.VectorSlice(iovs...)
 	iovsptr, iovslen := ffi.Slice(vecs)
@@ -208,6 +211,7 @@ func recvfrom(fd int, iovs [][]byte, flags int32) (n int, addr rawsocketaddr, of
 		unsafe.Pointer(&n),
 		unsafe.Pointer(&oflags),
 	)
+
 	runtime.KeepAlive(addrptr)
 	runtime.KeepAlive(iovsptr)
 	runtime.KeepAlive(iovs)
@@ -283,13 +287,6 @@ type unresolvedaddress struct{ network, address string }
 
 func (na *unresolvedaddress) Network() string { return na.network }
 func (na *unresolvedaddress) String() string  { return na.address }
-
-func setNonBlock(fd int) error {
-	// if err := syscall.SetNonblock(fd, true); err != nil {
-	// 	return os.NewSyscallError("setnonblock", err)
-	// }
-	return nil
-}
 
 func netaddrToSockaddr(addr net.Addr) (sockaddr, error) {
 	ipaddr := func(ip net.IP, zone string, port int) (sockaddr, error) {
@@ -550,7 +547,7 @@ func newFD(sysfd int, family int, sotype int, net string, laddr, raddr net.Addr)
 	if raddr == nil {
 		raddr = sockipToNetAddr(family, sotype)(nil)
 	}
-	log.Println("newFD", family, sotype, laddr, raddr)
+
 	s := &netFD{
 		fd:     sysfd,
 		family: family,
@@ -614,6 +611,7 @@ func (fd *netFD) Close() error {
 	if !fd.ok() {
 		return nil
 	}
+
 	defer fd.discard()
 	return fd.shutdown(syscall.SHUT_RDWR)
 }
@@ -645,8 +643,8 @@ func (fd *netFD) closeWrite() error {
 	return fd.shutdown(syscall.SHUT_WR)
 }
 
-func (fd *netFD) Read(p []byte) (n int, err error) {
-	n, _, _, err = recvfrom(fd.fd, [][]byte{p}, 0)
+func (fd *netFD) Read(b []byte) (n int, err error) {
+	n, _, _, err = recvfromSingle(int(fd.fd), b, 0)
 	return n, wrapSyscallError(readSyscallName, err)
 }
 
@@ -654,7 +652,7 @@ func (fd *netFD) initremote() error {
 	var (
 		saddr sockaddr
 	)
-	// log.Println("initremote initiated", fd.raddr, fmt.Sprintf("%+v", errorsx.Stack()))
+
 	if fd.raddr == nil {
 		return fmt.Errorf("no remote address")
 	}

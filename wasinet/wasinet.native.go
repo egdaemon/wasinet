@@ -143,28 +143,25 @@ func sock_recv_from(
 		case syscall.EINTR, syscall.EWOULDBLOCK:
 			continue
 		default:
-			log.Println("failed", err)
 			return ffierrors.Errno(err)
 		}
 
-		addr, err := Sockaddr(sa)
-		if err != nil {
-			log.Println("failed", err)
-			return ffierrors.Errno(err)
-		}
+		if sa != nil {
+			addr, err := Sockaddr(sa)
+			if err != nil {
+				return ffierrors.Errno(err)
+			}
 
-		if err := ffi.RawWrite(ffi.Native{}, &addr, addrptr, uint32(unsafe.Sizeof(addr))); err != nil {
-			log.Println("failed", err)
-			return ffierrors.Errno(err)
+			if err := ffi.RawWrite(ffi.Native{}, &addr, addrptr, uint32(unsafe.Sizeof(addr))); err != nil {
+				return ffierrors.Errno(err)
+			}
 		}
 
 		if err := ffi.Uint32Write(ffi.Native{}, nread, uint32(n)); err != nil {
-			log.Println("failed", err)
 			return ffierrors.Errno(err)
 		}
 
 		if err := ffi.Uint32Write(ffi.Native{}, oflags, uint32(roflags)); err != nil {
-			log.Println("failed", err)
 			return ffierrors.Errno(err)
 		}
 

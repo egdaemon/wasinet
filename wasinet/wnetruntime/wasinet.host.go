@@ -189,13 +189,15 @@ func SocketRecvFrom(fn RecvFromFn) RecvFromHostFn {
 			return ffierrors.Errno(err)
 		}
 
-		addr, err := wasinet.Sockaddr(sa)
-		if err != nil {
-			return ffierrors.Errno(err)
-		}
+		if sa != nil { // connected sockets
+			addr, err := wasinet.Sockaddr(sa)
+			if err != nil {
+				return ffierrors.Errno(err)
+			}
 
-		if err = ffi.RawWrite(m, &addr, unsafe.Pointer(addrptr), uint32(unsafe.Sizeof(addr))); err != nil {
-			return ffierrors.Errno(err)
+			if err = ffi.RawWrite(m, &addr, unsafe.Pointer(addrptr), uint32(unsafe.Sizeof(addr))); err != nil {
+				return ffierrors.Errno(err)
+			}
 		}
 
 		if err = ffi.Uint32Write(m, unsafe.Pointer(nread), uint32(n)); err != nil {

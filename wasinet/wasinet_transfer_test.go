@@ -3,6 +3,7 @@ package wasinet_test
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/rand"
 	"io"
 	"log"
@@ -14,13 +15,13 @@ import (
 	"github.com/egdaemon/wasinet/wasinet/internal/bytesx"
 	"github.com/egdaemon/wasinet/wasinet/testx"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func checkTransfer(ctx context.Context, t testing.TB, li addrconn) {
+func checkTransfer(ctx context.Context, t testing.TB, li addrconn, amount int64) {
 	var (
-		buf []byte = make([]byte, 128)
+		serr       error
+		amountsent int64
 	)
 
 	conn, err := wasinet.DialContext(ctx, li.Addr().Network(), li.Addr().String())
@@ -29,39 +30,55 @@ func checkTransfer(ctx context.Context, t testing.TB, li addrconn) {
 		require.NoError(t, conn.Close())
 	})
 
-	testx.Must(conn.Write([]byte("hello world")))(t)
-	n := testx.Must(conn.Read(buf))(t)
-	assert.Equal(t, testx.IOString(bytes.NewReader(buf[:n])), "hello world", "expected strings to match")
+	digestsent := md5.New()
+	digestrecv := md5.New()
+
+	go func() {
+		amountsent, serr = io.CopyN(conn, io.TeeReader(rand.Reader, digestsent), amount)
+	}()
+
+	n := testx.Must(io.Copy(digestrecv, io.LimitReader(conn, amount)))(t)
+	require.Equal(t, amount, n)
+	require.Equal(t, amount, amountsent)
+	require.NoError(t, err)
+	require.NoError(t, serr)
+	require.Equal(t, digestsent.Sum(nil), digestrecv.Sum(nil), "expected digests to match")
 }
 
 func TestTransferTCPIPv4(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkTransfer(ctx, t, listentcp(t, "tcp", ":0"))
+	checkTransfer(ctx, t, listentcp(t, "tcp", ":0"), bytesx.KiB)
 }
 
 func TestTransferTCP4IPv4(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkTransfer(ctx, t, listentcp(t, "tcp4", ":0"))
+	checkTransfer(ctx, t, listentcp(t, "tcp4", ":0"), bytesx.KiB)
 }
 
 func TestTransferTCPIPv6(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkTransfer(ctx, t, listentcp(t, "tcp", "[::]:0"))
+	checkTransfer(ctx, t, listentcp(t, "tcp", "[::]:0"), bytesx.KiB)
 }
 
 func TestTransferTCP6IPv6(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkTransfer(ctx, t, listentcp(t, "tcp6", "[::]:0"))
+	checkTransfer(ctx, t, listentcp(t, "tcp6", "[::]:0"), bytesx.KiB)
+}
+
+func TestTransferTCPLarge16MB(t *testing.T) {
+	ctx, done := testx.WithDeadline(t)
+	defer done()
+	checkTransfer(ctx, t, listentcp(t, "tcp", ":0"), 16*bytesx.MiB)
 }
 
 // func TestTransferUnix(t *testing.T) {
 // 	ctx, done := testx.WithDeadline(t)
 // 	defer done()
-// 	checkTransfer(ctx, t, listentcp(t, "unix", "test.socket"))
+// 	checkTransfer(ctx, t, listentcp(t, "unix", "test.socket"), bytesx.KiB)
 // }
 
 func TestTransferHTTP(t *testing.T) {
@@ -92,10 +109,11 @@ func TestTransferHTTP(t *testing.T) {
 func TestTransferHTTPExternal(t *testing.T) {
 	c := httpclient()
 
-	rsp, err := c.Get("http://google.com")
+	rsp, err := c.Get("https://google.com")
 	require.NoError(t, err, "expected request to succeed")
 	require.Equal(t, rsp.StatusCode, http.StatusOK)
 	bdy, err := io.ReadAll(rsp.Body)
 	require.NoError(t, err, "expected request to read body")
+	// log.Println(string(bdy))
 	require.Greater(t, len(bdy), 10)
 }

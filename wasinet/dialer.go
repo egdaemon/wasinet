@@ -3,7 +3,6 @@ package wasinet
 import (
 	"context"
 	"errors"
-	"log"
 	"log/slog"
 	"net"
 	"os"
@@ -139,7 +138,6 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	case ffierrors.EINPROGRESS:
 		inProgress = true
 	default:
-		log.Printf("WAAAAT conn %T %+v vs %d\n", err, err, syscall.EINPROGRESS)
 		return nil, os.NewSyscallError("connect", err)
 	}
 
@@ -224,18 +222,9 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 		}
 	}
 
-	log.Println("------------------------------------------------ OKAY")
-	defer log.Println("---------------------------------------------- OKEY")
+	slog.Debug("------------ critical area initiated ------------")
+	defer slog.Debug("------------ critical area completed ------------")
 
-	// 	dialer.go:224: ------------------------------------------------ OKAY
-	// listener.go:421: conn initializing *net.TCPConn
-	// wasinet.native.go:93: sock_localaddr 8
-	// wasinet.native.go:111: sock_peeraddr 8
-	// listener.go:468: translating to netfd 8 *net.TCPConn [::1]:55760 [::1]:36871
-	// listener.go:400: maybe closing? *net.TCPConn <nil>
-	// dialer.go:234: ---------------------------------------------- OKEY
-
-	// unix.Fcntl(fdi, syscall.F_GETFL, 0)
 	return makeConn(sconn)
 
 }

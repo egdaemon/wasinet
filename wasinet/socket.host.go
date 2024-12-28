@@ -3,14 +3,12 @@
 package wasinet
 
 import (
-	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"syscall"
 	"unsafe"
 
 	"github.com/egdaemon/wasinet/wasinet/ffi"
-	"github.com/egdaemon/wasinet/wasinet/internal/errorsx"
 	"golang.org/x/sys/unix"
 )
 
@@ -46,7 +44,7 @@ func Sockaddr(sa unix.Sockaddr) (zero rawsocketaddr, error error) {
 		}
 		return (&sockaddrUnix{name: name}).sockaddr(), nil
 	default:
-		log.Printf("unspoorted unix.Sockaddr: %T - %s\n", sa, fmt.Sprintf("%+v", errorsx.Stack()))
+		slog.Debug("unsupported unix.Sockaddr", slog.Any("sa", sa))
 		return zero, syscall.EINVAL
 	}
 }

@@ -2,6 +2,7 @@ package wasinet_test
 
 import (
 	"io"
+	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -13,9 +14,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	// slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
-	// log.SetFlags(log.Lshortfile)
-	// log.SetOutput(io.Discard)
+	slog.SetLogLoggerLevel(slog.LevelDebug)
+	log.SetFlags(log.Flags() | log.Lshortfile)
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
 	os.Exit(m.Run())
 }
 
