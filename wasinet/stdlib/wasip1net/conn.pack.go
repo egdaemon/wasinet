@@ -13,6 +13,6 @@ type pconn struct {
 	innerpconn
 }
 
-func makePacketConn(pc innerpconn) net.PacketConn {
-	return pconn{innerpconn: pc}
+func makePacketConn(pc innerpconn) *pconn {
+	return &pconn{innerpconn: pc}
 }

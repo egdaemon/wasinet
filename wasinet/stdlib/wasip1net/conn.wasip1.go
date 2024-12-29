@@ -23,6 +23,7 @@ func (c *conn) Read(b []byte) (int, error) {
 	if !c.ok() {
 		return 0, syscall.EINVAL
 	}
+
 	n, err := c.fd.Read(b)
 	if err != nil && err != io.EOF {
 		err = &net.OpError{Op: "read", Net: c.fd.net, Source: c.fd.laddr, Addr: c.fd.raddr, Err: err}
@@ -44,6 +45,9 @@ func (c *conn) Write(b []byte) (int, error) {
 
 // Close closes the connection.
 func (c *conn) Close() error {
+	defer func() {
+		c.fd = nil
+	}()
 	if !c.ok() {
 		return syscall.EINVAL
 	}
@@ -147,11 +151,11 @@ func (c *conn) File() (f *os.File, err error) {
 }
 
 func (c *conn) SyscallConn() syscall.RawConn {
-	return netsysconn{c}
+	return netsysconn{*c}
 }
 
 type netsysconn struct {
-	*conn
+	conn
 }
 
 func (t netsysconn) Control(f func(fd uintptr)) error {

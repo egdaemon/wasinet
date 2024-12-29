@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/egdaemon/wasinet/wasinet"
@@ -75,11 +76,17 @@ func TestTransferTCPLarge16MB(t *testing.T) {
 	checkTransfer(ctx, t, listentcp(t, "tcp", ":0"), 16*bytesx.MiB)
 }
 
-// func TestTransferUnix(t *testing.T) {
-// 	ctx, done := testx.WithDeadline(t)
-// 	defer done()
-// 	checkTransfer(ctx, t, listentcp(t, "unix", "test.socket"), bytesx.KiB)
-// }
+func TestTransferUnix(t *testing.T) {
+	ctx, done := testx.WithDeadline(t)
+	defer done()
+	checkTransfer(ctx, t, listentcp(t, "unix", filepath.Join(t.TempDir(), "test.socket")), bytesx.KiB)
+}
+
+func TestTransferUnixLarge(t *testing.T) {
+	ctx, done := testx.WithDeadline(t)
+	defer done()
+	checkTransfer(ctx, t, listentcp(t, "unix", filepath.Join(t.TempDir(), "test.socket")), 16*bytesx.MiB)
+}
 
 func TestTransferHTTP(t *testing.T) {
 	var buf bytes.Buffer

@@ -3,6 +3,7 @@
 package wasip1syscall
 
 import (
+	"log"
 	"log/slog"
 	"strconv"
 	"syscall"
@@ -11,6 +12,21 @@ import (
 	"github.com/egdaemon/wasinet/wasinet/ffi"
 	"golang.org/x/sys/unix"
 )
+
+var (
+	afmap = _AFFamilyMap{}
+)
+
+func init() {
+	afmap.UNSPEC = syscall.AF_UNSPEC
+	afmap.UNIX = syscall.AF_UNIX
+	afmap.INET = syscall.AF_INET
+	afmap.INET6 = syscall.AF_INET6
+}
+
+func AF() _AFFamilyMap {
+	return afmap
+}
 
 func ReadSockaddr(
 	m ffi.Memory, addr unsafe.Pointer, addrlen uint32,
@@ -42,15 +58,19 @@ func UnixSockaddr(v RawSocketAddress) (sa unix.Sockaddr, err error) {
 	}
 }
 
-func Sockaddr(sa unix.Sockaddr) (zero RawSocketAddress, error error) {
+func Sockaddr(sa unix.Sockaddr) (zero *RawSocketAddress, error error) {
 	switch t := sa.(type) {
 	case *unix.SockaddrInet4:
-		a := addressany[addrip4]{addr: addrip4{ip: t.Addr, port: uint32(t.Port)}}
+		a := addressany[addrip4]{
+			family: syscall.AF_INET,
+			addr:   addrip4{ip: t.Addr, port: uint32(t.Port)},
+		}
 		return a.Sockaddr(), nil
 
 	case *unix.SockaddrInet6:
 		a := addressany[addrip6]{
-			addr: addrip6{ip: t.Addr, port: uint32(t.Port), zone: strconv.FormatUint(uint64(t.ZoneId), 10)},
+			family: syscall.AF_INET6,
+			addr:   addrip6{ip: t.Addr, port: uint32(t.Port), zone: strconv.FormatUint(uint64(t.ZoneId), 10)},
 		}
 		return a.Sockaddr(), nil
 	case *unix.SockaddrUnix:
@@ -66,5 +86,23 @@ func Sockaddr(sa unix.Sockaddr) (zero RawSocketAddress, error error) {
 	default:
 		slog.Debug("unsupported unix.Sockaddr", slog.Any("sa", sa))
 		return zero, syscall.EINVAL
+	}
+}
+
+func rawtosockaddr(rsa *RawSocketAddress) (sockaddr, error) {
+	log.Println("(native) FAMILY", rsa.Family, syscall.AF_INET, syscall.AF_INET6)
+	switch int32(rsa.Family) {
+	case syscall.AF_INET:
+		addr := (*addressany[addrip4])(unsafe.Pointer(&rsa.Addr))
+		return addr, nil
+	case syscall.AF_INET6:
+		addr := (*addressany[addrip6])(unsafe.Pointer(&rsa.Addr))
+		return addr, nil
+	case syscall.AF_UNIX:
+		addr := (*addressany[addrunix])(unsafe.Pointer(&rsa.Addr))
+		return addr, nil
+	default:
+		log.Println("PANIC")
+		return nil, syscall.ENOTSUP
 	}
 }

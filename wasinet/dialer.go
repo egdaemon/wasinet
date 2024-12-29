@@ -2,8 +2,6 @@ package wasinet
 
 import (
 	"context"
-	"errors"
-	"log"
 	"log/slog"
 	"net"
 	"os"
@@ -101,16 +99,22 @@ func DialContext(ctx context.Context, network, address string) (net.Conn, error)
 	return nil, netOpErr(opdial, unresolvedaddr(network, address), err)
 }
 
-func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
+func dialAddr(ctx context.Context, addr net.Addr) (_ net.Conn, err error) {
+	defer func() {
+		if err == nil {
+			return
+		}
+	}()
+
 	af := wasip1syscall.NetaddrAFFamily(addr)
 	sotype, err := socketType(addr)
 	if err != nil {
-		return nil, os.NewSyscallError("socket", err)
+		return nil, err
 	}
 
 	fd, err := wasip1syscall.Socket(af, sotype, netaddrproto(addr))
 	if err != nil {
-		return nil, os.NewSyscallError("socket", err)
+		return nil, err
 	}
 	defer func() {
 		if fd >= 0 {
@@ -119,47 +123,32 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	}()
 
 	if sotype == syscall.SOCK_DGRAM && af != syscall.AF_UNIX {
-		if err := wasip1syscall.SetSockoptInt(fd, SOL_SOCKET, SO_BROADCAST, 1); err != nil {
-			// If the system does not support broadcast we should still be able
-			// to use the datagram socket.
-			switch {
-			case errors.Is(err, syscall.EINVAL):
-			case errors.Is(err, syscall.ENOPROTOOPT):
-			default:
-				return nil, os.NewSyscallError("setsockopt", err)
-			}
+		if err := wasip1syscall.SetSockoptBroadcast(fd); err != nil {
+			return nil, err
 		}
 	}
 
-	caddr, err := wasip1syscall.NetaddrToRaw(addr)
+	caddr, err := wasip1syscall.NetaddrToRaw(af, sotype, addr)
 	if err != nil {
-		return nil, os.NewSyscallError("sockaddr", err)
+		return nil, err
 	}
 
 	var inProgress bool
-	switch err := wasip1syscall.Connect(fd, caddr); err {
-	case nil:
-	case ffierrors.EINPROGRESS:
-		inProgress = true
-	default:
-		return nil, os.NewSyscallError("connect", err)
+	if err := wasip1syscall.Connect(fd, caddr); err != nil {
+		switch errno := ffierrors.Errno(err); errno {
+		case syscall.EINPROGRESS:
+			inProgress = true
+		default:
+			return nil, errno
+		}
 	}
 
 	if sotype == syscall.SOCK_DGRAM {
-		localaddr, err := wasip1syscall.Getsockname(fd)
-		if err != nil {
-			return nil, err
-		}
+		defer func() {
+			fd = -1 // now the *netFD owns the file descriptor
+		}()
 
-		peeraddr, err := wasip1syscall.Getpeername(fd)
-		if err != nil {
-			return nil, err
-		}
-
-		laddr := wasip1syscall.SocketAddressFormat(af, sotype)(localaddr)
-		raddr := wasip1syscall.SocketAddressFormat(af, sotype)(peeraddr)
-		_, _ = laddr, raddr
-		return wasip1net.Conn(wasip1net.Socket(uintptr(fd)))
+		return wasip1net.Conn(af, sotype, wasip1net.Socket(uintptr(fd)))
 	}
 
 	sconn := wasip1net.Socket(uintptr(fd))
@@ -168,8 +157,7 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 		if err == nil {
 			return
 		}
-
-		err = sconn.Close()
+		_ = sconn.Close()
 	}()
 	if inProgress {
 		rawConn, err := sconn.SyscallConn()
@@ -181,17 +169,18 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 			var err error
 			cerr := rawConn.Write(func(fd uintptr) bool {
 				var value int
-				value, err = wasip1syscall.GetSockoptInt(int(fd), SOL_SOCKET, syscall.SO_ERROR)
+				value, err = wasip1syscall.GetSockoptInt(int(fd), SOL_SOCKET, wasip1syscall.SO_ERROR)
 				if err != nil {
 					return true // done
 				}
-				switch syscall.Errno(value) {
+
+				switch ffierrors.Errno(err) {
 				case syscall.EINPROGRESS, syscall.EINTR:
 					return false // continue
 				case syscall.EISCONN:
 					err = nil
 					return true
-				case syscall.Errno(0):
+				case ffierrors.ErrnoSuccess():
 					// The net poller can wake up spuriously. Check that we are
 					// are really connected.
 					_, err := wasip1syscall.Getpeername(int(fd))
@@ -207,6 +196,7 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 		select {
 		case err := <-errch:
 			if err != nil {
+				sconn.Close()
 				return nil, os.NewSyscallError("connect", err)
 			}
 		case <-ctx.Done():
@@ -216,27 +206,10 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 			// Wait for the goroutine to complete, we can safely discard the
 			// error here because we don't care about the socket anymore.
 			<-errch
+
 			return nil, context.Cause(ctx)
 		}
 	}
 
-	slog.Debug("------------ critical area initiated ------------")
-	defer slog.Debug("------------ critical area completed ------------")
-
-	// switch fd.laddr.(type) {
-	// case *TCPAddr:
-	// 	return newTCPConn(fd, defaultTCPKeepAliveIdle, KeepAliveConfig{}, testPreHookSetKeepAlive, testHookSetKeepAlive), nil
-	// case *UDPAddr:
-	// 	return newUDPConn(fd), nil
-	// case *IPAddr:
-	// 	return newIPConn(fd), nil
-	// case *UnixAddr:
-	// 	return newUnixConn(fd), nil
-	// }go:
-
-	log.Println("HELLO WORLD", sconn.Fd())
-	return initconn(errorsx.Must(wasip1net.Conn(sconn)))
-	// return net.RawFileConn(sconn.fd)
-	// return makeConn(sconn)
-
+	return wasip1net.Conn(af, sotype, sconn)
 }

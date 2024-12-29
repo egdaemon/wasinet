@@ -3,6 +3,8 @@
 package wasip1net
 
 import (
+	"fmt"
+	"log"
 	"net"
 	"os"
 	"runtime"
@@ -10,6 +12,102 @@ import (
 	"time"
 	_ "unsafe"
 )
+
+// This helper is implemented in the syscall package. It means we don't have
+// to redefine the fd_fdstat_get host import or the fdstat struct it
+// populates.
+//
+// func fd_fdstat_get_type(fd int) (uint8, error)
+//
+// go:linkname fd_fdstat_get_type syscall.fd_fdstat_get_type
+func net_fd_fdstat_get_type(fd int) (uint8, error) {
+	return uint8(ftype_socket_stream), nil
+}
+
+func fileConnNet(sotype int) (string, error) {
+	switch sotype {
+	case syscall.SOCK_STREAM:
+		return "tcp", nil
+	case syscall.SOCK_DGRAM:
+		return "udp", nil
+	default:
+		return "", syscall.ENOTSOCK
+	}
+}
+
+//go:linkname newFile net.newUnixFile
+func newFile(fd int, name string) *os.File
+
+func newFD(family, sotype int, f *os.File, ifn func(*netFD) error) (*netFD, error) {
+	net, err := fileConnNet(sotype)
+	if err != nil {
+		return nil, err
+	}
+
+	pfd := f.PollFD().Copy()
+	fd := newPollFD(net, family, sotype, pfd.Sysfd, &pfd)
+	if err := fd.init(ifn); err != nil {
+		pfd.Close()
+		return nil, err
+	}
+
+	return fd, nil
+}
+
+func newFileConn(family, sotype int, f *os.File) (net.Conn, error) {
+	fd, err := newFD(family, sotype, f, InitConnection)
+	if err != nil {
+		return nil, err
+	}
+	return newFdConn(fd)
+}
+
+func newFdConn(fd *netFD) (net.Conn, error) {
+	switch fd.net {
+	case "tcp":
+		return &TCPConn{conn{fd: fd}}, nil
+	case "udp":
+		return &UDPConn{conn{fd: fd}}, nil
+	default:
+		return nil, fmt.Errorf("unsupported network for file connection: " + fd.net)
+	}
+}
+
+func PacketConnFd(family, sotype int, fd uintptr) (net.PacketConn, error) {
+	pfd, err := newFD(family, sotype, Socket(fd), InitListener)
+	if err != nil {
+		return nil, err
+	}
+	return makePacketConn(&packetConn{conn: &conn{pfd}}), nil
+}
+
+func Listener(family, sotype int, fd uintptr) (net.Listener, error) {
+	pfd, err := newFD(family, sotype, Socket(fd), InitListener)
+	if err != nil {
+		return nil, err
+	}
+
+	return &listener{pfd}, nil
+}
+
+type slistener interface {
+	accept() (netfd *netFD, err error)
+}
+
+type listener struct{ *netFD }
+
+func (l *listener) Accept() (net.Conn, error) {
+	c, err := l.netFD.accept()
+	if err != nil {
+		return nil, err
+	}
+
+	return newFdConn(c)
+}
+
+func (l *listener) Addr() net.Addr {
+	return l.netFD.LocalAddr()
+}
 
 // https://github.com/WebAssembly/WASI/blob/a2b96e81c0586125cc4dc79a5be0b78d9a059925/legacy/preview1/docs.md#filetype
 
@@ -26,21 +124,10 @@ const (
 	ftype_symbolic_link                    // The file refers to a symbolic link inode.
 )
 
-const (
-	readSyscallName  = "fd_read"
-	writeSyscallName = "fd_write"
-)
-
 type pollfd interface {
 	Accept() (int, syscall.Sockaddr, string, error)
 	Close() error
 	Dup() (int, string, error)
-	Fchdir() error
-	Fchmod(mode uint32) error
-	Fchown(uid int, gid int) error
-	Fstat(s *syscall.Stat_t) error
-	Fsync() error
-	Ftruncate(size int64) error
 	Init(net string, pollable bool) error
 	Pread(p []byte, off int64) (int, error)
 	Pwrite(p []byte, off int64) (int, error)
@@ -48,15 +135,8 @@ type pollfd interface {
 	RawRead(f func(uintptr) bool) error
 	RawWrite(f func(uintptr) bool) error
 	Read(p []byte) (int, error)
-	ReadDir(buf []byte, cookie uint64) (int, error)
-	ReadDirent(buf []byte) (int, error)
 	ReadFrom(p []byte) (int, syscall.Sockaddr, error)
-	ReadFromInet4(p []byte, from *syscall.SockaddrInet4) (int, error)
-	ReadFromInet6(p []byte, from *syscall.SockaddrInet6) (int, error)
 	ReadMsg(p []byte, oob []byte, flags int) (int, int, int, syscall.Sockaddr, error)
-	ReadMsgInet4(p []byte, oob []byte, flags int, sa4 *syscall.SockaddrInet4) (int, int, int, error)
-	ReadMsgInet6(p []byte, oob []byte, flags int, sa6 *syscall.SockaddrInet6) (int, int, int, error)
-	Seek(offset int64, whence int) (int64, error)
 	SetBlocking() error
 	SetDeadline(t time.Time) error
 	SetReadDeadline(t time.Time) error
@@ -65,12 +145,8 @@ type pollfd interface {
 	WaitWrite() error
 	Write(p []byte) (int, error)
 	WriteMsg(p []byte, oob []byte, sa syscall.Sockaddr) (int, int, error)
-	WriteMsgInet4(p []byte, oob []byte, sa *syscall.SockaddrInet4) (int, int, error)
-	WriteMsgInet6(p []byte, oob []byte, sa *syscall.SockaddrInet6) (int, int, error)
 	WriteOnce(p []byte) (int, error)
 	WriteTo(p []byte, sa syscall.Sockaddr) (int, error)
-	WriteToInet4(p []byte, sa *syscall.SockaddrInet4) (int, error)
-	WriteToInet6(p []byte, sa *syscall.SockaddrInet6) (int, error)
 }
 
 type unknownAddr struct{}
@@ -87,98 +163,29 @@ func wrapSyscallError(name string, err error) error {
 	return err
 }
 
-// This helper is implemented in the syscall package. It means we don't have
-// to redefine the fd_fdstat_get host import or the fdstat struct it
-// populates.
-//
-// func fd_fdstat_get_type(fd int) (uint8, error)
-//
-// go:linkname fd_fdstat_get_type syscall.fd_fdstat_get_type
-func net_fd_fdstat_get_type(fd int) (uint8, error) {
-	// res, err := fd_fdstat_get_type(fd)
-	// log.Println("fdstat_get_type", fd, res, err)
-	return uint8(ftype_socket_stream), nil
-}
-
-func fileConnNet(filetype syscall.Filetype) (string, error) {
-	switch filetype {
-	case syscall.FILETYPE_SOCKET_STREAM:
-		return "tcp", nil
-	case syscall.FILETYPE_SOCKET_DGRAM:
-		return "udp", nil
-	default:
-		return "", syscall.ENOTSOCK
-	}
-}
-
-//go:linkname newFile net.newUnixFile
-func newFile(fd int, name string) *os.File
-
-func newFD(f *os.File) (*netFD, error) {
-	filetype, err := net_fd_fdstat_get_type(f.PollFD().Sysfd)
-	if err != nil {
-		return nil, err
-	}
-	net, err := fileConnNet(filetype)
-	if err != nil {
-		return nil, err
-	}
-	pfd := f.PollFD().Copy()
-	fd := newPollFD(net, &pfd)
-	if err := fd.init(); err != nil {
-		pfd.Close()
-		return nil, err
-	}
-
-	return fd, nil
-}
-
-func newConn(f *os.File) (net.Conn, error) {
-	fd, err := newFD(f)
-	if err != nil {
-		return nil, err
-	}
-	return newFileConn(fd), nil
-}
-
-func newFileConn(fd *netFD) net.Conn {
-	switch fd.net {
-	case "tcp":
-		return &TCPConn{conn{fd: fd}}
-	// case "udp":
-	// 	return &UDPConn{conn{fd: fd}}
-	default:
-		panic("unsupported network for file connection: " + fd.net)
-	}
-}
-
-func PacketConn(fd uintptr, family int, sotype int, netw string, laddr, raddr net.Addr) (net.PacketConn, error) {
-	pfd, err := newFD(Socket(fd))
-	if err != nil {
-		return nil, err
-	}
-	return makePacketConn(&packetConn{conn: &conn{pfd}}), nil
-}
-
 func setReadBuffer(fd *netFD, bytes int) (err error) {
+	log.Println("set read buffer")
 	// err := fd.pfd.SetsockoptInt(syscall.SOL_SOCKET, syscall.SO_RCVBUF, bytes)
 	runtime.KeepAlive(fd)
 	return wrapSyscallError("setsockopt", err)
 }
 
 func setWriteBuffer(fd *netFD, bytes int) (err error) {
+	log.Println("set write buffer")
 	// err := fd.pfd.SetsockoptInt(syscall.SOL_SOCKET, syscall.SO_SNDBUF, bytes)
 	runtime.KeepAlive(fd)
 	return wrapSyscallError("setsockopt", err)
 }
 
 func setKeepAlive(fd *netFD, keepalive bool) (err error) {
+	log.Println("set keepalive")
 	// err := fd.pfd.SetsockoptInt(syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, boolint(keepalive))
 	runtime.KeepAlive(fd)
 	return wrapSyscallError("setsockopt", err)
 }
 
 func setLinger(fd *netFD, sec int) (err error) {
+	log.Println("set linger")
 	// var l syscall.Linger
 	// if sec >= 0 {
 	// 	l.Onoff = 1

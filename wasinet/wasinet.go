@@ -11,13 +11,32 @@ import (
 func Hijack() {
 	net.DefaultResolver.Dial = DialContext
 	http.DefaultTransport = &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&Dialer{
+			Timeout: 2 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2: true,
+
+		MaxIdleConns:          10,
+		ResponseHeaderTimeout: 1 * time.Second,
+		IdleConnTimeout:       5 * time.Second,
+		TLSHandshakeTimeout:   2 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+}
+
+// internal only. use at your own risk
+func InsecureHTTP() *http.Transport {
+	return &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		Proxy:           http.ProxyFromEnvironment,
 		DialContext: (&Dialer{
 			Timeout: 2 * time.Second,
 		}).DialContext,
-		ForceAttemptHTTP2:     true,
+		ForceAttemptHTTP2: true,
+
 		MaxIdleConns:          10,
+		ResponseHeaderTimeout: 1 * time.Second,
 		IdleConnTimeout:       5 * time.Second,
 		TLSHandshakeTimeout:   2 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,

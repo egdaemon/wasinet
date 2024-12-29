@@ -5,11 +5,9 @@ import (
 	"net"
 	"net/netip"
 	"syscall"
-	"unsafe"
 
 	"github.com/egdaemon/wasinet/wasinet/ffi"
 	"github.com/egdaemon/wasinet/wasinet/internal/errorsx"
-	"github.com/egdaemon/wasinet/wasinet/internal/langx"
 )
 
 const (
@@ -19,23 +17,10 @@ const (
 
 // mapping to host's AFFamily values
 type _AFFamilyMap struct {
-	INET  int32
-	INET6 int32
-	UNIX  int32
-}
-
-var (
-	afmap = _AFFamilyMap{}
-)
-
-func init() {
-	afmap.UNIX = sock_determine_host_af_family(syscall.AF_UNIX)
-	afmap.INET = sock_determine_host_af_family(syscall.AF_INET)
-	afmap.INET6 = sock_determine_host_af_family(syscall.AF_INET6)
-}
-
-func AF() _AFFamilyMap {
-	return afmap
+	UNSPEC int32
+	INET   int32
+	INET6  int32
+	UNIX   int32
 }
 
 type RawSocketAddress struct {
@@ -45,7 +30,7 @@ type RawSocketAddress struct {
 }
 
 type sockaddr interface {
-	Sockaddr() RawSocketAddress
+	Sockaddr() *RawSocketAddress
 }
 
 type addressany[T any] struct {
@@ -54,9 +39,10 @@ type addressany[T any] struct {
 	addr    T
 }
 
-func (s addressany[T]) Sockaddr() (raddr RawSocketAddress) {
+func (s addressany[T]) Sockaddr() (raddr *RawSocketAddress) {
 	ptr, plen := ffi.Pointer(&s)
 	buf := errorsx.Must(ffi.SliceRead[byte](ffi.Native{}, ptr, plen))
+	raddr = new(RawSocketAddress)
 	raddr.Family = s.family
 	raddr.Soctype = s.soctype
 	copy(raddr.Addr[:], buf)
@@ -78,28 +64,12 @@ type addrunix struct {
 	name string
 }
 
-func rawtosockaddr(rsa *RawSocketAddress) (sockaddr, error) {
-	switch rsa.Family {
-	case syscall.AF_INET:
-		addr := (*addressany[addrip4])(unsafe.Pointer(&rsa.Addr))
-		return addr, nil
-	case syscall.AF_INET6:
-		addr := (*addressany[addrip6])(unsafe.Pointer(&rsa.Addr))
-		return addr, nil
-	case syscall.AF_UNIX:
-		addr := (*addressany[addrunix])(unsafe.Pointer(&rsa.Addr))
-		return addr, nil
-	default:
-		return nil, syscall.ENOTSUP
-	}
-}
-
-func NetaddrToRaw(addr net.Addr) (*RawSocketAddress, error) {
+func NetaddrToRaw(family, soctype int, addr net.Addr) (*RawSocketAddress, error) {
 	ipaddr := func(ip net.IP, zone string, port int) (*RawSocketAddress, error) {
 		if ipv4 := ip.To4(); ipv4 != nil {
-			return langx.Autoptr(addressany[addrip4]{addr: addrip4{ip: ([4]byte)(ipv4), port: uint32(port)}}.Sockaddr()), nil
+			return addressany[addrip4]{family: uint16(family), soctype: uint16(soctype), addr: addrip4{ip: ([4]byte)(ipv4), port: uint32(port)}}.Sockaddr(), nil
 		} else if len(ip) == net.IPv6len {
-			return langx.Autoptr(addressany[addrip6]{addr: addrip6{ip: ([16]byte)(ip), zone: zone, port: uint32(port)}}.Sockaddr()), nil
+			return addressany[addrip6]{family: uint16(family), soctype: uint16(soctype), addr: addrip6{ip: ([16]byte)(ip), zone: zone, port: uint32(port)}}.Sockaddr(), nil
 		} else {
 			return nil, &net.AddrError{
 				Err:  "unsupported address type",
@@ -116,7 +86,7 @@ func NetaddrToRaw(addr net.Addr) (*RawSocketAddress, error) {
 	case *net.UDPAddr:
 		return ipaddr(a.IP, a.Zone, a.Port)
 	case *net.UnixAddr:
-		return langx.Autoptr(addressany[addrunix]{addr: addrunix{name: a.Name}}.Sockaddr()), nil
+		return addressany[addrunix]{family: uint16(family), soctype: uint16(soctype), addr: addrunix{name: a.Name}}.Sockaddr(), nil
 	}
 
 	return nil, &net.AddrError{
@@ -125,7 +95,7 @@ func NetaddrToRaw(addr net.Addr) (*RawSocketAddress, error) {
 	}
 }
 
-func NetUnixToRaw(sa *net.UnixAddr) (zero RawSocketAddress) {
+func NetUnixToRaw(sa *net.UnixAddr) (zero *RawSocketAddress) {
 	name := sa.Name
 	if len(name) == 0 {
 		// For consistency across platforms, replace empty unix socket
@@ -152,13 +122,28 @@ func NetUnix(v RawSocketAddress) (addrPort *net.UnixAddr, err error) {
 	}
 }
 
-func NetipAddrPortToRaw(nap netip.AddrPort) RawSocketAddress {
+func NetipAddrPortToRaw(family, sotype int, nap netip.AddrPort) *RawSocketAddress {
 	if nap.Addr().Is4() || nap.Addr().Is4In6() {
-		a := addressany[addrip4]{family: 99, soctype: 99, addr: addrip4{port: uint32(nap.Port()), ip: nap.Addr().As4()}}
+		a := addressany[addrip4]{family: uint16(family), soctype: uint16(sotype), addr: addrip4{port: uint32(nap.Port()), ip: nap.Addr().As4()}}
 		return a.Sockaddr()
 	} else {
-		a := addressany[addrip6]{family: 99, soctype: 99, addr: addrip6{port: uint32(nap.Port()), ip: nap.Addr().As16()}}
+		a := addressany[addrip6]{family: uint16(family), soctype: uint16(sotype), addr: addrip6{port: uint32(nap.Port()), ip: nap.Addr().As16()}}
 		return a.Sockaddr()
+	}
+}
+
+func UDPAddr(v RawSocketAddress) (addr *net.UDPAddr, err error) {
+	sockaddr, err := rawtosockaddr(&v)
+	if err != nil {
+		return addr, err
+	}
+
+	switch unknown := sockaddr.(type) {
+	case *addressany[addrip4]:
+		return &net.UDPAddr{IP: unknown.addr.ip[:], Port: int(unknown.addr.port)}, nil
+	default:
+		log.Printf("unsupported address %T\n", unknown)
+		return nil, syscall.EINVAL
 	}
 }
 

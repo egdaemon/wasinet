@@ -15,7 +15,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	slog.SetLogLoggerLevel(slog.LevelDebug)
+	slog.SetLogLoggerLevel(slog.LevelInfo)
 	log.SetFlags(log.Flags() | log.Lshortfile)
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
 	os.Exit(m.Run())

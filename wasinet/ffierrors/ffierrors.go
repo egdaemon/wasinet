@@ -10,10 +10,6 @@ import (
 	"syscall"
 )
 
-const (
-	EINPROGRESS syscall.Errno = 0x1A
-)
-
 func ErrnoSuccess() syscall.Errno {
 	return syscall.Errno(0x0)
 }
@@ -32,7 +28,7 @@ func Errno(err error) syscall.Errno {
 	}
 
 	if errno, ok := err.(syscall.Errno); ok {
-		return ErrnoTranslate(errno)
+		return errno
 	}
 
 	return makeErrnoSlow(err)

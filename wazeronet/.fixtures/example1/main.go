@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"syscall"
 
 	"github.com/egdaemon/wasinet/wasinet"
 )
@@ -21,7 +22,6 @@ func digest(b []byte) string {
 	return hex.EncodeToString(d[:])
 }
 func testhttpserver() (err error) {
-
 	var (
 		l   net.Listener
 		buf bytes.Buffer
@@ -34,13 +34,16 @@ func testhttpserver() (err error) {
 
 	m := http.NewServeMux()
 	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("request received")
+		defer log.Println("request completed")
+
 		if _, err := io.Copy(w, bytes.NewBuffer(buf.Bytes())); err != nil {
 			log.Println("copy failed", err)
 			return
 		}
 	})
 
-	if l, err = net.Listen("tcp", ":0"); err != nil {
+	if l, err = wasinet.Listen(context.Background(), "tcp", "localhost:0"); err != nil {
 		return err
 	}
 	defer l.Close()
@@ -50,8 +53,9 @@ func testhttpserver() (err error) {
 			log.Println(err)
 		}
 	}()
+
 	log.Println("server addr", l.Addr().String())
-	rsp, err := http.Get(fmt.Sprintf("http://%s", l.Addr().String()))
+	rsp, err := http.Get(fmt.Sprintf("http://%s/", l.Addr().String()))
 	if err != nil {
 		return err
 	}
@@ -71,22 +75,36 @@ func testhttpserver() (err error) {
 	return nil
 }
 
+func wasierrorcode(errs ...syscall.Errno) {
+	for _, errno := range errs {
+		log.Printf("CODE 0x%X\n", int(errno))
+	}
+}
+
 func main() {
+	var (
+		err     error
+		failure error
+	)
 	slog.SetLogLoggerLevel(slog.LevelDebug)
 	log.SetFlags(log.Flags() | log.Lshortfile)
 	wasinet.Hijack()
+	http.DefaultTransport = wasinet.InsecureHTTP()
 
+	wasierrorcode(syscall.ENOPROTOOPT)
 	ip, err := net.ResolveTCPAddr("tcp", "www.google.com:443")
 	if err == nil {
 		log.Println("IP ADDRESS", ip.IP, ip.Port)
 	} else {
 		log.Fatalln("tcp resolution failed", err)
+		failure = compact(failure, err)
 	}
 	addresses, err := net.DefaultResolver.LookupIP(context.Background(), "ip", "www.google.com")
 	if err == nil {
 		log.Println("addresses", addresses)
 	} else {
 		log.Fatalln("ip resolution failed", err)
+		failure = compact(failure, err)
 	}
 	log.Println("transfer data")
 	if err = checkTransfer(context.Background(), listentcp("tcp", ":0"), 1024); err != nil {
@@ -95,13 +113,20 @@ func main() {
 	log.Println("http server")
 	if err = testhttpserver(); err != nil {
 		log.Println("http server failed", err)
+		failure = compact(failure, err)
 	}
+
 	log.Println("http get request")
 	rsp, err := http.Get("https://www.google.com")
 	if err == nil && rsp.StatusCode == http.StatusOK {
 		log.Println("successfully fetched google.com")
 	} else {
 		log.Fatalln("unable to fetch http", err)
+		failure = compact(failure, err)
+	}
+
+	if failure != nil {
+		log.Fatalln(failure)
 	}
 }
 
@@ -172,6 +197,16 @@ func checkTransfer(ctx context.Context, li addrconn, amount int64) error {
 
 	if !bytes.Equal(digestsent.Sum(nil), digestrecv.Sum(nil)) {
 		return fmt.Errorf("digests didnt match")
+	}
+
+	return nil
+}
+
+func compact(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

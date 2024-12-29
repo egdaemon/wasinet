@@ -3,14 +3,10 @@
 package wasip1net
 
 import (
-	"io"
-	"log"
 	"net"
 	"net/netip"
-	"syscall"
 	"time"
 
-	"github.com/egdaemon/wasinet/wasinet/internal/errorsx"
 	"github.com/egdaemon/wasinet/wasinet/stdlib/wasip1syscall"
 )
 
@@ -46,34 +42,16 @@ func (c *packetConn) ReadFrom(b []byte) (n int, addr net.Addr, err error) {
 }
 
 func (c *packetConn) ReadMsgUnix(b, oob []byte) (n, oobn, flags int, addr *net.UnixAddr, err error) {
-	rawConnErr := c.conn.SyscallConn().Read(func(fd uintptr) (done bool) {
-		var raw wasip1syscall.RawSocketAddress
-		var oflags int32
-		n, raw, oflags, err = wasip1syscall.RecvFromsingle(int(fd), b, 0)
-		if err == syscall.EAGAIN {
-			return false
-		}
-		if err == syscall.EINVAL {
-			// This error occurs when the socket is shutdown asynchronusly
-			// by a call to CloseRead.
-			n, err = 0, io.EOF
-		} else {
-			if addr, err = wasip1syscall.NetUnix(raw); err != nil {
-				return true
-			}
-
-		}
-		flags = int(oflags)
-		return true
-	})
-
-	if rawConnErr != nil {
-		err = rawConnErr
+	n, oobn, flags, rsa, err := c.conn.fd.readMsg(b, oob)
+	if err != nil {
+		return 0, 0, 0, addr, err
 	}
-	if n == 0 && err == nil {
-		err = io.EOF
+
+	if addr, err = wasip1syscall.NetUnix(rsa); err != nil {
+		return 0, 0, 0, addr, err
 	}
-	return
+
+	return n, oobn, flags, addr, err
 }
 
 func (c *packetConn) ReadMsgUDP(b, oob []byte) (n, oobn, flags int, addr *net.UDPAddr, err error) {
@@ -82,34 +60,13 @@ func (c *packetConn) ReadMsgUDP(b, oob []byte) (n, oobn, flags int, addr *net.UD
 }
 
 func (c *packetConn) ReadMsgUDPAddrPort(b, oob []byte) (n, oobn, flags int, addrPort netip.AddrPort, err error) {
-	werr := c.conn.SyscallConn().Read(func(fd uintptr) (done bool) {
-		var remote wasip1syscall.RawSocketAddress
-		var oflags int32
-		n, remote, oflags, err = wasip1syscall.RecvFromsingle(int(fd), b, 0)
-		if err == syscall.EAGAIN {
-			return false
-		}
-		if err == syscall.EINVAL {
-			// This error occurs when the socket is shutdown asynchronusly
-			// by a call to CloseRead.
-			n, err = 0, io.EOF
-			return true
-		}
-		if err != nil {
-			return true
-		}
+	n, oobn, flags, rsa, err := c.conn.fd.readMsg(b, oob)
+	if err != nil {
+		return 0, 0, 0, addrPort, err
+	}
 
-		if addrPort, err = wasip1syscall.Netipaddrport(remote); err != nil {
-			log.Println("failed to decode address", remote.Family, syscall.AF_INET, syscall.AF_INET6, err)
-			return true
-		}
-
-		flags = int(oflags)
-		return true
-	})
-
-	if n == 0 && werr == nil {
-		err = io.EOF
+	if addrPort, err = wasip1syscall.Netipaddrport(rsa); err != nil {
+		return 0, 0, 0, addrPort, err
 	}
 
 	return n, oobn, flags, addrPort, err
@@ -142,11 +99,7 @@ func (c *packetConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 }
 
 func (c *packetConn) WriteMsgUnix(b, oob []byte, addr *net.UnixAddr) (n, oobn int, err error) {
-	werr := c.conn.SyscallConn().Write(func(fd uintptr) (done bool) {
-		n, err = wasip1syscall.SendToSingle(int(fd), b, wasip1syscall.NetUnixToRaw(addr), 0)
-		return err != syscall.EAGAIN
-	})
-	return n, oobn, errorsx.Compact(werr, err)
+	return c.conn.fd.writeMsg(b, oob, wasip1syscall.NetUnixToRaw(addr))
 }
 
 func (c *packetConn) WriteMsgUDP(b, oob []byte, addr *net.UDPAddr) (n, oobn int, err error) {
@@ -154,11 +107,7 @@ func (c *packetConn) WriteMsgUDP(b, oob []byte, addr *net.UDPAddr) (n, oobn int,
 }
 
 func (c *packetConn) WriteMsgUDPAddrPort(b, oob []byte, addrPort netip.AddrPort) (n, oobn int, err error) {
-	cerr := c.conn.SyscallConn().Write(func(fd uintptr) (done bool) {
-		n, err = wasip1syscall.SendToSingle(int(fd), b, wasip1syscall.NetipAddrPortToRaw(addrPort), 0)
-		return err != syscall.EAGAIN
-	})
-	return n, oobn, errorsx.Compact(cerr, err)
+	return c.conn.fd.writeMsg(b, oob, wasip1syscall.NetipAddrPortToRaw(c.conn.fd.family, c.conn.fd.sotype, addrPort))
 }
 
 func (c *packetConn) LocalAddr() net.Addr {

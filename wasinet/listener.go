@@ -3,7 +3,6 @@ package wasinet
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"syscall"
@@ -15,10 +14,11 @@ import (
 // Listen announces on the local network address.
 func Listen(ctx context.Context, network, address string) (net.Listener, error) {
 	switch network {
-	case "tcp", "tcp4", "tcp6", "udp", "udp4", "udp6", "unix":
+	case "tcp", "tcp4", "tcp6", "unix":
 	default:
 		return nil, unsupportedNetwork(network, address)
 	}
+
 	addrs, err := wasip1syscall.LookupAddress(ctx, oplisten, network, address)
 	if err != nil {
 		return nil, netOpErr(oplisten, unresolvedaddr(network, address), err)
@@ -40,6 +40,7 @@ func ListenPacket(ctx context.Context, network, address string) (net.PacketConn,
 	if err != nil {
 		return nil, netOpErr(oplisten, unresolvedaddr(network, address), err)
 	}
+
 	conn, err := listenPacketAddr(addrs[0])
 	return conn, netOpErr(oplisten, addrs[0], err)
 }
@@ -49,7 +50,55 @@ func unsupportedNetwork(network, address string) error {
 }
 
 func listenAddr(addr net.Addr) (net.Listener, error) {
-	fd, err := wasip1syscall.Socket(wasip1syscall.NetaddrAFFamily(addr), syscall.SOCK_STREAM, netaddrproto(addr))
+	af := wasip1syscall.NetaddrAFFamily(addr)
+	sotype, err := socketType(addr)
+	if err != nil {
+		return nil, os.NewSyscallError("socket", err)
+	}
+	fd, err := wasip1syscall.Socket(af, sotype, netaddrproto(addr))
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if fd >= 0 {
+			syscall.Close(fd)
+		}
+	}()
+
+	if err := wasip1syscall.SetReuseAddress(fd); err != nil {
+		return nil, err
+	}
+
+	baddr, err := wasip1syscall.NetaddrToRaw(af, sotype, addr)
+	if err != nil {
+		return nil, os.NewSyscallError("raw address", err)
+	}
+
+	if err := wasip1syscall.Bind(fd, baddr); err != nil {
+		return nil, err
+	}
+
+	const backlog = 64 // TODO: configurable?
+	if err := wasip1syscall.Listen(fd, backlog); err != nil {
+		return nil, err
+	}
+
+	l, err := wasip1net.Listen(af, sotype, uintptr(fd))
+	if err != nil {
+		return nil, err
+	}
+	fd = -1 // now the *os.File owns the file descriptor
+
+	return l, nil
+}
+
+func listenPacketAddr(addr net.Addr) (net.PacketConn, error) {
+	af := wasip1syscall.NetaddrAFFamily(addr)
+	sotype, err := socketType(addr)
+	if err != nil {
+		return nil, os.NewSyscallError("socket", err)
+	}
+	fd, err := wasip1syscall.Socket(af, sotype, netaddrproto(addr))
 	if err != nil {
 		return nil, os.NewSyscallError("socket", err)
 	}
@@ -59,110 +108,23 @@ func listenAddr(addr net.Addr) (net.Listener, error) {
 		}
 	}()
 
-	// if err := setReuseAddress(fd); err != nil {
-	// 	return nil, err
-	// }
+	if err := wasip1syscall.SetReuseAddress(fd); err != nil {
+		return nil, os.NewSyscallError("set_socketopt_int", err)
+	}
 
-	bindAddr, err := wasip1syscall.NetaddrToRaw(addr)
+	baddr, err := wasip1syscall.NetaddrToRaw(af, sotype, addr)
 	if err != nil {
 		return nil, os.NewSyscallError("bind", err)
 	}
 
-	if err := wasip1syscall.Bind(fd, bindAddr); err != nil {
+	if err := wasip1syscall.Bind(fd, baddr); err != nil {
 		return nil, os.NewSyscallError("bind", err)
 	}
 
-	const backlog = 64 // TODO: configurable?
-	if err := wasip1syscall.Listen(fd, backlog); err != nil {
-		return nil, os.NewSyscallError("listen", err)
-	}
-
-	name, err := wasip1syscall.Getsockname(fd)
-	if err != nil {
-		return nil, os.NewSyscallError("getsockname", err)
-	}
-
-	log.Println("listeners not yet supported", name)
-	f := wasip1net.Socket(uintptr(fd))
-	fd = -1 // now the *os.File owns the file descriptor
-	defer f.Close()
-
-	return nil, syscall.ENOTSUP
-	// l, err := net.FileListener(f)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// return makeListener(l, name), nil
-}
-
-func listenPacketAddr(addr net.Addr) (net.PacketConn, error) {
-	return nil, syscall.ENOTSUP
-	// af := netaddrfamily(addr)
-	// sotype, err := socketType(addr)
-	// if err != nil {
-	// 	return nil, os.NewSyscallError("socket", err)
-	// }
-	// fd, err := socket(af, syscall.SOCK_DGRAM, netaddrproto(addr))
-	// if err != nil {
-	// 	return nil, os.NewSyscallError("socket", err)
-	// }
-	// defer func() {
-	// 	if fd >= 0 {
-	// 		syscall.Close(fd)
-	// 	}
-	// }()
-
-	// if err := setReuseAddress(fd); err != nil {
-	// 	return nil, err
-	// }
-
-	// bindAddr, err := netaddrToSockaddr(addr)
-	// if err != nil {
-	// 	return nil, os.NewSyscallError("bind", err)
-	// }
-	// if err := bind(fd, bindAddr); err != nil {
-	// 	return nil, os.NewSyscallError("bind", err)
-	// }
-
-	// name, err := getsockname(fd)
-	// if err != nil {
-	// 	return nil, os.NewSyscallError("getsockname", err)
-	// }
-	// laddr := sockipToNetAddr(af, sotype)(name)
-	// if laddr == nil {
-	// 	return nil, fmt.Errorf("unsupported address")
-	// }
-	// fd = -1 // now the *netFD owns the file descriptor
-	// return wasip1net.PacketConn(uintptr(fd), af, sotype, socnetwork(af, sotype), laddr, nil)
-}
-
-type listener struct{ net.Listener }
-
-func (l *listener) Accept() (net.Conn, error) {
-	c, err := l.Listener.Accept()
+	pconn, err := wasip1net.PacketConnFd(af, sotype, uintptr(fd))
 	if err != nil {
 		return nil, err
 	}
-
-	return initconn(c)
+	fd = -1 // now the *netFD owns the file descriptor
+	return pconn, err
 }
-
-// func sockaddrIPAndPort(addr sockaddr) (net.IP, int) {
-// 	switch a := addr.(type) {
-// 	case *sockipaddr[sockip4]:
-// 		return net.IP(a.addr.ip[:]), int(a.port)
-// 	case *sockipaddr[sockip6]:
-// 		return net.IP(a.addr.ip[:]), int(a.port)
-// 	default:
-// 		return nil, 0
-// 	}
-// }
-
-// func sockaddrName(addr sockaddr) string {
-// 	switch a := addr.(type) {
-// 	case *sockaddrUnix:
-// 		return a.name
-// 	default:
-// 		return ""
-// 	}
-// }

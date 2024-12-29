@@ -11,14 +11,18 @@ func newFile(fd int, name string) *os.File {
 	return os.NewFile(uintptr(fd), name)
 }
 
-func newConn(f *os.File) (c net.Conn, err error) {
+func newFileConn(family, sotype int, f *os.File) (c net.Conn, err error) {
 	return net.FileConn(f)
 }
 
-func PacketConn(fd uintptr, family int, sotype int, netw string, laddr, raddr net.Addr) (net.PacketConn, error) {
+func PacketConnFd(family, sotype int, fd uintptr) (*pconn, error) {
 	pc, err := net.FilePacketConn(Socket(uintptr(fd)))
 	if err != nil {
 		return nil, err
 	}
 	return makePacketConn(pc), nil
+}
+
+func Listener(family, sotype int, fd uintptr) (net.Listener, error) {
+	return net.FileListener(Socket(fd))
 }
