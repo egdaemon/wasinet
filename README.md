@@ -1,13 +1,16 @@
 ### alpha quality.
 
-while the base test harness excercises the code. this software hasnt been battled tested to the extend we'd be happy saying its production ready.
+while the base test harness excercises the code. this software hasnt been battled tested to the extent we'd be happy saying its production ready.
 we're working on it. help in this area is always appreciated.
 
 ### wasi networking functionality for golang.
 This is a quick and simple socket implementation for golang in wasi that doesnt try to interopt with the wider ecosystem
-that currently exists.
+that currently exists. the existing ecosystem requires munging the wasip1 namespace, which causes issues with incompatibilities.
+
+wasinet provides its own namespaced functions and *leverages* the wasip1 namespace where necessary. primarily clock and poll functionality.
 
 ### known missing functionality.
+- system TLS certificates dont work.
 - unix sockets are untested.
 - many socopts are untested.
 
@@ -32,10 +35,13 @@ go get -u github.com/egdaemon/wasinet/wasinet@latest github.com/egdaemon/wasinet
 package main
 
 import (
+    "github.com/egdaemon/wasinet/wasinet"
     "github.com/egdaemon/wasinet/wasinet/autohijack"
 )
 
 func main() {
+	// required because of the tls certificate resolution doesnt work in wasi environments by default.
+	http.DefaultTransport = wasinet.InsecureHTTP()
     http.Get("https://www.google.com")
 }
 ```
