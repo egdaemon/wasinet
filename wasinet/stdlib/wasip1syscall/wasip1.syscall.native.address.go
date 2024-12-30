@@ -89,7 +89,6 @@ func Sockaddr(sa unix.Sockaddr) (zero *RawSocketAddress, error error) {
 }
 
 func rawtosockaddr(rsa *RawSocketAddress) (sockaddr, error) {
-	log.Println("(native) FAMILY", rsa.Family, syscall.AF_INET, syscall.AF_INET6)
 	switch int32(rsa.Family) {
 	case syscall.AF_INET:
 		addr := (*addressany[addrip4])(unsafe.Pointer(&rsa.Addr))

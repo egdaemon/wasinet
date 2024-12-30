@@ -4,7 +4,6 @@ package wazeronet
 
 import (
 	"context"
-	"log"
 
 	"github.com/egdaemon/wasinet/wasinet/wnetruntime"
 	"github.com/tetratelabs/wazero"
@@ -84,7 +83,6 @@ func Module(runtime wazero.Runtime, wnet wnetruntime.Socket) wazero.HostModuleBu
 		addr uint32,
 		addrlen uint32,
 	) uint32 {
-		log.Println("sock-getlocaladdr")
 		return uint32(wnetruntime.SocketLocalAddr(wnet.LocalAddr)(ctx, Memory(m.Memory()), fd, uintptr(addr), addrlen))
 	}).Export("sock_getlocaladdr").
 		NewFunctionBuilder().WithFunc(func(
