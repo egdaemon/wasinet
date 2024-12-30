@@ -3,7 +3,6 @@ package wazeronet_test
 import (
 	"context"
 	"crypto/rand"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,10 +17,6 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	slog.SetLogLoggerLevel(slog.LevelDebug)
-	// slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
-	// log.SetFlags(log.Lshortfile)
-	// log.SetOutput(io.Discard)
 	os.Exit(m.Run())
 }
 

@@ -5,8 +5,6 @@ package wazeronet
 import (
 	"context"
 	"log"
-	"log/slog"
-	"os"
 
 	"github.com/egdaemon/wasinet/wasinet/wnetruntime"
 	"github.com/tetratelabs/wazero"
@@ -14,10 +12,6 @@ import (
 )
 
 func Module(runtime wazero.Runtime, wnet wnetruntime.Socket) wazero.HostModuleBuilder {
-	slog.SetLogLoggerLevel(slog.LevelDebug)
-	log.SetFlags(log.Flags() | log.Lshortfile)
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
-	log.SetFlags(log.Lshortfile)
 	return runtime.NewHostModuleBuilder(wnetruntime.Namespace).
 		NewFunctionBuilder().WithFunc(func(
 		ctx context.Context,

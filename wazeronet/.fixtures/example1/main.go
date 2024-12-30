@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"log/slog"
 	"net"
 	"net/http"
 	"syscall"
@@ -86,8 +85,6 @@ func main() {
 		err     error
 		failure error
 	)
-	slog.SetLogLoggerLevel(slog.LevelDebug)
-	log.SetFlags(log.Flags() | log.Lshortfile)
 	wasinet.Hijack()
 	http.DefaultTransport = wasinet.InsecureHTTP()
 
@@ -145,13 +142,13 @@ func listentcp(network, address string) net.Listener {
 			server, client := net.Pipe()
 			go func(c net.Conn) {
 				if _, err := io.Copy(c, server); err != nil {
-					slog.Error("server copy failed", slog.Any("error", err))
+					log.Println("server copy failed", err)
 				}
 			}(conn)
 			go func(c net.Conn) {
 				defer c.Close()
 				if _, err := io.Copy(client, c); err != nil {
-					slog.Error("client copy failed", slog.Any("error", err))
+					log.Println("client copy failed", err)
 				}
 			}(conn)
 		}

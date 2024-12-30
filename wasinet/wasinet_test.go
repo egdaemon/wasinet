@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -15,9 +14,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	slog.SetLogLoggerLevel(slog.LevelInfo)
 	log.SetFlags(log.Flags() | log.Lshortfile)
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
 	os.Exit(m.Run())
 }
 
@@ -41,13 +38,13 @@ func listentcp(t testing.TB, network, address string) net.Listener {
 			server, client := net.Pipe()
 			go func(c net.Conn) {
 				if _, err := io.Copy(c, server); err != nil {
-					slog.Error("server copy failed", slog.Any("error", err))
+					log.Println("server copy failed", err)
 				}
 			}(conn)
 			go func(c net.Conn) {
 				defer c.Close()
 				if _, err := io.Copy(client, c); err != nil {
-					slog.Error("client copy failed", slog.Any("error", err))
+					log.Println("client copy failed", err)
 				}
 			}(conn)
 		}
