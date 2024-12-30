@@ -1,6 +1,6 @@
 //go:build !wasip1
 
-package wasinet
+package wasip1syscall
 
 import (
 	"context"
@@ -17,33 +17,17 @@ import (
 
 // The native implementation ensure the api interopt is correct.
 
-func unixsockaddr(v rawsocketaddr) (sa unix.Sockaddr, err error) {
-	wsa, err := rawtosockaddr(&v)
-	if err != nil {
-		return nil, err
-	}
-
-	switch t := wsa.(type) {
-	case *sockipaddr[sockip4]:
-		return &unix.SockaddrInet4{Port: int(t.port), Addr: t.addr.ip}, nil
-	case *sockipaddr[sockip6]:
-		return &unix.SockaddrInet6{Port: int(t.port), Addr: t.addr.ip, ZoneId: 0}, nil
-	case *sockaddrUnix:
-		return &unix.SockaddrUnix{Name: t.name}, nil
-	default:
-		return nil, syscall.ENOTSUP
-	}
-}
-
 func sock_open(af int32, socktype int32, proto int32, fd unsafe.Pointer) syscall.Errno {
 	log.Println("sock_open", af, socktype, proto)
 	_fd, errno := unix.Socket(int(af), int(socktype), int(proto))
-	ffi.Int32Write(fd, int32(_fd))
+	if err := ffi.Int32Write(ffi.Native{}, fd, int32(_fd)); err != nil {
+		return ffierrors.Errno(err)
+	}
 	return ffierrors.Errno(errno)
 }
 
 func sock_bind(fd int32, addrptr unsafe.Pointer, addrlen uint32) syscall.Errno {
-	wsa, err := unixsockaddr(ffi.UnsafeClone[rawsocketaddr](addrptr))
+	wsa, err := UnixSockaddr(ffi.UnsafeClone[RawSocketAddress](addrptr))
 	if err != nil {
 		return ffierrors.Errno(err)
 	}
@@ -58,7 +42,7 @@ func sock_listen(fd int32, backlog int32) syscall.Errno {
 }
 
 func sock_connect(fd int32, addr unsafe.Pointer, addrlen uint32) syscall.Errno {
-	wsa, err := unixsockaddr(ffi.UnsafeClone[rawsocketaddr](addr))
+	wsa, err := UnixSockaddr(ffi.UnsafeClone[RawSocketAddress](addr))
 	if err != nil {
 		return ffierrors.Errno(err)
 	}
@@ -129,14 +113,16 @@ func sock_getpeeraddr(fd int32, addrptr unsafe.Pointer, addrlen uint32) syscall.
 func sock_recv_from(
 	fd int32,
 	iovs unsafe.Pointer, iovslen uint32,
+	oobptr unsafe.Pointer, ooblen uint32,
 	addrptr unsafe.Pointer, _addrlen uint32,
 	iflags int32,
 	nread unsafe.Pointer,
 	oflags unsafe.Pointer,
 ) syscall.Errno {
+	oob := errorsx.Must(ffi.BytesRead(ffi.Native{}, oobptr, ooblen))
 	vecs := errorsx.Must(ffi.SliceRead[[]byte](ffi.Native{}, iovs, iovslen))
 	for {
-		n, _, roflags, sa, err := unix.RecvmsgBuffers(int(fd), vecs, nil, int(iflags))
+		n, _, roflags, sa, err := unix.RecvmsgBuffers(int(fd), vecs, oob, int(iflags))
 		switch err {
 		case nil:
 			// nothing to do.
@@ -172,10 +158,12 @@ func sock_recv_from(
 func sock_send_to(
 	fd int32,
 	iovs unsafe.Pointer, iovslen uint32,
+	oobptr unsafe.Pointer, ooblen uint32,
 	addrptr unsafe.Pointer, _addrlen uint32,
 	flags int32,
 	nwritten unsafe.Pointer,
 ) syscall.Errno {
+	oob := errorsx.Must(ffi.BytesRead(ffi.Native{}, oobptr, ooblen))
 	vec, err := ffi.SliceRead[ffi.Vector](ffi.Native{}, iovs, iovslen)
 	if err != nil {
 		return ffierrors.Errno(err)
@@ -186,7 +174,7 @@ func sock_send_to(
 		return ffierrors.Errno(err)
 	}
 
-	sa, err := unixsockaddr(ffi.UnsafeClone[rawsocketaddr](addrptr))
+	sa, err := UnixSockaddr(ffi.UnsafeClone[RawSocketAddress](addrptr))
 	if err != nil {
 		return ffierrors.Errno(err)
 	}
@@ -194,7 +182,7 @@ func sock_send_to(
 	// dispatch-run/wasi-go has linux special cased here.
 	// did not faithfully follow it because it might be caused by other complexity.
 	// https://github.com/dispatchrun/wasi-go/blob/038d5104aacbb966c25af43797473f03c5da3e4f/systems/unix/system.go#L640
-	n, err := unix.SendmsgBuffers(int(fd), vecs, nil, sa, int(flags))
+	n, err := unix.SendmsgBuffers(int(fd), vecs, oob, sa, int(flags))
 
 	if err := ffi.Uint32Write(ffi.Native{}, nwritten, uint32(n)); err != nil {
 		return ffierrors.Errno(err)
@@ -207,6 +195,27 @@ func sock_shutdown(fd, how int32) syscall.Errno {
 	return ffierrors.Errno(unix.Shutdown(int(fd), int(how)))
 }
 
+func sock_accept(fd int32, nfd unsafe.Pointer, addressptr unsafe.Pointer, addresslen uint32) (errno syscall.Errno) {
+	_nfd, sa, err := unix.Accept(int(fd))
+	if err != nil {
+		return ffierrors.Errno(err)
+	}
+
+	rsa, err := Sockaddr(sa)
+	if err != nil {
+		return ffierrors.Errno(err)
+	}
+	if err = ffi.RawWrite(ffi.Native{}, rsa, addressptr, addresslen); err != nil {
+		return ffierrors.Errno(err)
+	}
+
+	if err = ffi.Int32Write(ffi.Native{}, nfd, int32(_nfd)); err != nil {
+		return ffierrors.Errno(err)
+	}
+
+	return ffierrors.Errno(nil)
+}
+
 func sock_getaddrip(
 	networkptr unsafe.Pointer, networklen uint32,
 	addressptr unsafe.Pointer, addresslen uint32,
@@ -217,11 +226,10 @@ func sock_getaddrip(
 		ip  []net.IP
 		buf []byte
 	)
-	network := unsafe.String((*byte)(networkptr), networklen)
-	address := unsafe.String((*byte)(addressptr), addresslen)
-	log.Println("sock_getaddrip", network, address)
+
+	network := errorsx.Must(ffi.StringRead(ffi.Native{}, networkptr, networklen))
+	address := errorsx.Must(ffi.StringRead(ffi.Native{}, addressptr, addresslen))
 	if ip, err = net.DefaultResolver.LookupIP(context.Background(), network, address); err != nil {
-		log.Println("sock_getaddrip lookup failed", err)
 		return syscall.EINVAL
 	}
 
@@ -271,47 +279,4 @@ func sock_determine_host_af_family(
 	wasi int32,
 ) int32 {
 	return wasi
-}
-
-func netaddrfamily(addr net.Addr) int {
-	ipfamily := func(ip net.IP) int {
-		if ip.To4() == nil {
-			return syscall.AF_INET6
-		}
-
-		return syscall.AF_INET
-	}
-
-	switch a := addr.(type) {
-	case *net.IPAddr:
-		return ipfamily(a.IP)
-	case *net.TCPAddr:
-		return ipfamily(a.IP)
-	case *net.UDPAddr:
-		return ipfamily(a.IP)
-	case *net.UnixAddr:
-		return syscall.AF_UNIX
-	}
-
-	return syscall.AF_INET
-}
-
-func rawtosockaddr(rsa *rawsocketaddr) (sockaddr, error) {
-	switch rsa.family {
-	case syscall.AF_INET:
-		addr := (*sockipaddr[sockip4])(unsafe.Pointer(&rsa.addr))
-		return addr, nil
-	case syscall.AF_INET6:
-		addr := (*sockipaddr[sockip6])(unsafe.Pointer(&rsa.addr))
-		return addr, nil
-	case syscall.AF_UNIX:
-		addr := (*sockaddrUnix)(unsafe.Pointer(&rsa.addr))
-		return addr, nil
-	default:
-		return nil, syscall.ENOTSUP
-	}
-}
-
-func sock_init(fd int32) syscall.Errno {
-	return ffierrors.Errno(unix.SetNonblock(int(fd), true))
 }

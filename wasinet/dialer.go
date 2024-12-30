@@ -2,7 +2,6 @@ package wasinet
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net"
 	"os"
@@ -11,6 +10,8 @@ import (
 
 	"github.com/egdaemon/wasinet/wasinet/ffierrors"
 	"github.com/egdaemon/wasinet/wasinet/internal/errorsx"
+	"github.com/egdaemon/wasinet/wasinet/stdlib/wasip1net"
+	"github.com/egdaemon/wasinet/wasinet/stdlib/wasip1syscall"
 )
 
 // Dialer is a type similar to net.Dialer but it uses the dial functions defined
@@ -78,13 +79,13 @@ func Dial(network, address string) (net.Conn, error) {
 
 // DialContext is a variant of Dial that accepts a context.
 func DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	addrs, err := lookupAddr(ctx, opdial, network, address)
+	addrs, err := wasip1syscall.LookupAddress(ctx, opdial, network, address)
 	if err != nil {
 		return nil, netOpErr(opdial, unresolvedaddr(network, address), err)
 	}
-	var addr net.Addr
-	var conn net.Conn
-	for _, addr = range addrs {
+
+	for _, addr := range addrs {
+		var conn net.Conn
 		conn, err = dialAddr(ctx, addr)
 		if err == nil {
 			return conn, nil
@@ -94,19 +95,26 @@ func DialContext(ctx context.Context, network, address string) (net.Conn, error)
 			break
 		}
 	}
+
 	return nil, netOpErr(opdial, unresolvedaddr(network, address), err)
 }
 
-func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
-	af := netaddrfamily(addr)
+func dialAddr(ctx context.Context, addr net.Addr) (_ net.Conn, err error) {
+	defer func() {
+		if err == nil {
+			return
+		}
+	}()
+
+	af := wasip1syscall.NetaddrAFFamily(addr)
 	sotype, err := socketType(addr)
 	if err != nil {
-		return nil, os.NewSyscallError("socket", err)
+		return nil, err
 	}
 
-	fd, err := socket(af, sotype, netaddrproto(addr))
+	fd, err := wasip1syscall.Socket(af, sotype, netaddrproto(addr))
 	if err != nil {
-		return nil, os.NewSyscallError("socket", err)
+		return nil, err
 	}
 	defer func() {
 		if fd >= 0 {
@@ -115,63 +123,41 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 	}()
 
 	if sotype == syscall.SOCK_DGRAM && af != syscall.AF_UNIX {
-		if err := setsockopt(fd, SOL_SOCKET, SO_BROADCAST, 1); err != nil {
-			// If the system does not support broadcast we should still be able
-			// to use the datagram socket.
-			switch {
-			case errors.Is(err, syscall.EINVAL):
-			case errors.Is(err, syscall.ENOPROTOOPT):
-			default:
-				return nil, os.NewSyscallError("setsockopt", err)
-			}
+		if err := wasip1syscall.SetSockoptBroadcast(fd); err != nil {
+			return nil, err
 		}
 	}
 
-	connectAddr, err := netaddrToSockaddr(addr)
+	caddr, err := wasip1syscall.NetaddrToRaw(af, sotype, addr)
 	if err != nil {
-		return nil, os.NewSyscallError("sockaddr", err)
+		return nil, err
 	}
 
 	var inProgress bool
-	switch err := connect(fd, connectAddr); err {
-	case nil:
-	case ffierrors.EINPROGRESS:
-		inProgress = true
-	default:
-		return nil, os.NewSyscallError("connect", err)
+	if err := wasip1syscall.Connect(fd, caddr); err != nil {
+		switch errno := ffierrors.Errno(err); errno {
+		case syscall.EINPROGRESS:
+			inProgress = true
+		default:
+			return nil, errno
+		}
 	}
 
 	if sotype == syscall.SOCK_DGRAM {
-		localaddr, err := getsockname(fd)
-		if err != nil {
-			return nil, err
-		}
+		defer func() {
+			fd = -1 // now the *netFD owns the file descriptor
+		}()
 
-		peeraddr, err := getpeername(fd)
-		if err != nil {
-			return nil, err
-		}
-
-		laddr := sockipToNetAddr(af, sotype)(localaddr)
-		raddr := sockipToNetAddr(af, sotype)(peeraddr)
-
-		sconn := newFD(fd, af, sotype, socnetwork(af, sotype), laddr, raddr)
-		fd = -1 // now the *netFD owns the file descriptor
-		if err = sconn.initremote(); err != nil {
-			return nil, err
-		}
-
-		return makePacketConn(sconn), nil
+		return wasip1net.Conn(af, sotype, wasip1net.Socket(uintptr(fd)))
 	}
 
-	sconn := newFD(fd, af, sotype, socnetwork(af, sotype), nil, nil)
+	sconn := wasip1net.Socket(uintptr(fd))
 	fd = -1 // now the *netFD owns the file descriptor
 	defer func() {
 		if err == nil {
 			return
 		}
-
-		err = sconn.Close()
+		_ = sconn.Close()
 	}()
 	if inProgress {
 		rawConn, err := sconn.SyscallConn()
@@ -183,20 +169,21 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 			var err error
 			cerr := rawConn.Write(func(fd uintptr) bool {
 				var value int
-				value, err = getsockopt(int(fd), SOL_SOCKET, syscall.SO_ERROR)
+				value, err = wasip1syscall.GetSockoptInt(int(fd), SOL_SOCKET, wasip1syscall.SO_ERROR)
 				if err != nil {
 					return true // done
 				}
-				switch syscall.Errno(value) {
+
+				switch ffierrors.Errno(err) {
 				case syscall.EINPROGRESS, syscall.EINTR:
 					return false // continue
 				case syscall.EISCONN:
 					err = nil
 					return true
-				case syscall.Errno(0):
+				case ffierrors.ErrnoSuccess():
 					// The net poller can wake up spuriously. Check that we are
 					// are really connected.
-					_, err := getpeername(int(fd))
+					_, err := wasip1syscall.Getpeername(int(fd))
 					return err == nil
 				default:
 					err = syscall.Errno(value)
@@ -209,6 +196,7 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 		select {
 		case err := <-errch:
 			if err != nil {
+				sconn.Close()
 				return nil, os.NewSyscallError("connect", err)
 			}
 		case <-ctx.Done():
@@ -218,13 +206,10 @@ func dialAddr(ctx context.Context, addr net.Addr) (net.Conn, error) {
 			// Wait for the goroutine to complete, we can safely discard the
 			// error here because we don't care about the socket anymore.
 			<-errch
+
 			return nil, context.Cause(ctx)
 		}
 	}
 
-	slog.Debug("------------ critical area initiated ------------")
-	defer slog.Debug("------------ critical area completed ------------")
-
-	return makeConn(sconn)
-
+	return wasip1net.Conn(af, sotype, sconn)
 }

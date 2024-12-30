@@ -1,6 +1,7 @@
 package wasinet_test
 
 import (
+	"context"
 	"io"
 	"log"
 	"log/slog"
@@ -14,7 +15,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	slog.SetLogLoggerLevel(slog.LevelDebug)
+	slog.SetLogLoggerLevel(slog.LevelInfo)
 	log.SetFlags(log.Flags() | log.Lshortfile)
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
 	os.Exit(m.Run())
@@ -33,7 +34,7 @@ func (t udpaddr) Addr() net.Addr {
 }
 
 func listentcp(t testing.TB, network, address string) net.Listener {
-	li, err := wasinet.Listen(network, address)
+	li, err := wasinet.Listen(context.Background(), network, address)
 	require.NoError(t, err)
 	go func() {
 		for conn, err := li.Accept(); err == nil; conn, err = li.Accept() {
@@ -59,7 +60,7 @@ func listentcp(t testing.TB, network, address string) net.Listener {
 }
 
 func listenudp(t testing.TB, network, address string) addrconn {
-	li, err := wasinet.ListenPacket(network, address)
+	li, err := wasinet.ListenPacket(context.Background(), network, address)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {

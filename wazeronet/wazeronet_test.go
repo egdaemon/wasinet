@@ -19,7 +19,7 @@ import (
 
 func TestMain(m *testing.M) {
 	slog.SetLogLoggerLevel(slog.LevelDebug)
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
+	// slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
 	// log.SetFlags(log.Lshortfile)
 	// log.SetOutput(io.Discard)
 	os.Exit(m.Run())
@@ -39,7 +39,7 @@ func compileAndRun(ctx context.Context, t *testing.T, path string) error {
 	// Create a new WebAssembly Runtime.
 	runtime := wazero.NewRuntimeWithConfig(
 		ctx,
-		wazero.NewRuntimeConfig(),
+		wazero.NewRuntimeConfig().WithDebugInfoEnabled(true),
 	)
 
 	mcfg := wazero.NewModuleConfig().WithStdin(
@@ -49,7 +49,6 @@ func compileAndRun(ctx context.Context, t *testing.T, path string) error {
 	).WithStdout(
 		os.Stdout,
 	).WithSysNanotime().WithSysWalltime().WithRandSource(rand.Reader)
-
 	wasienv, err := wasi_snapshot_preview1.NewBuilder(runtime).Instantiate(ctx)
 	if err != nil {
 		return err
