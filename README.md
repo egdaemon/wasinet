@@ -1,5 +1,7 @@
-### not yet ready for use
-still diagnosing some issues. =)
+### alpha quality.
+
+while the base test harness excercises the code. this software hasnt been battled tested to the extend we'd be happy saying its production ready.
+we're working on it. help in this area is always appreciated.
 
 ### wasi networking functionality for golang.
 This is a quick and simple socket implementation for golang in wasi that doesnt try to interopt with the wider ecosystem
