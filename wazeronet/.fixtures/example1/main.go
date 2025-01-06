@@ -88,7 +88,7 @@ func main() {
 	wasinet.Hijack()
 	http.DefaultTransport = wasinet.InsecureHTTP()
 
-	wasierrorcode(syscall.ENOPROTOOPT)
+	wasierrorcode(syscall.ECONNREFUSED)
 	ip, err := net.ResolveTCPAddr("tcp", "www.google.com:443")
 	if err == nil {
 		log.Println("IP ADDRESS", ip.IP, ip.Port)
