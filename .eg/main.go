@@ -28,13 +28,8 @@ func main() {
 		ctx,
 		eggit.AutoClone,
 		DNSDebug,
-		// eg.Build(eg.DefaultModule()),
-		// eg.Module(
-		// 	ctx,
-		// eg.DefaultModule(),
 		eggolang.AutoCompile(),
 		eggolang.AutoTest(),
-		// ),
 	)
 
 	if err != nil {
