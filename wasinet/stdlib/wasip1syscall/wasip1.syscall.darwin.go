@@ -1,4 +1,4 @@
-//go:build !wasip1 && !darwin
+//go:build !wasip1 && darwin
 
 package wasip1syscall
 
@@ -64,9 +64,6 @@ func sock_setsockopt(fd int32, level uint32, name uint32, valueptr unsafe.Pointe
 	case syscall.SO_LINGER: // this is untested.
 		value := ffi.UnsafeClone[unix.Timeval](valueptr)
 		return ffierrors.Errno(unix.SetsockoptTimeval(int(fd), int(level), int(name), &value))
-	case syscall.SO_BINDTODEVICE: // this is untested.
-		value := errorsx.Must(ffi.StringRead(ffi.Native{}, valueptr, uint32(valuelen)))
-		return ffierrors.Errno(unix.SetsockoptString(int(fd), int(level), int(name), value))
 	default:
 		value := errorsx.Must(ffi.Uint32Read(ffi.Native{}, valueptr, valuelen))
 		log.Println("sock_setsockopt", fd, level, name, value)
