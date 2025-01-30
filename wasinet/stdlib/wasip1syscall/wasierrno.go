@@ -21,6 +21,7 @@ const (
 	ENOTCONN     syscall.Errno = 0x35
 	ETIMEDOUT    syscall.Errno = 0x49
 	ECONNREFUSED syscall.Errno = 0xE
+	ENOENT       syscall.Errno = 0x2C
 )
 
 var mapped = map[syscall.Errno]syscall.Errno{
@@ -38,6 +39,7 @@ var mapped = map[syscall.Errno]syscall.Errno{
 	syscall.EMFILE:           EMFILE,
 	syscall.ENOPROTOOPT:      ENOPROTOOPT,
 	syscall.ECONNREFUSED:     ECONNREFUSED,
+	syscall.ENOENT:           ENOENT,
 }
 
 // maps native codes to wasi codes.

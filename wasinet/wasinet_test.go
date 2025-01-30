@@ -30,7 +30,7 @@ func (t udpaddr) Addr() net.Addr {
 	return t.LocalAddr()
 }
 
-func listentcp(t testing.TB, network, address string) net.Listener {
+func listenstream(t testing.TB, network, address string) net.Listener {
 	li, err := wasinet.Listen(context.Background(), network, address)
 	require.NoError(t, err)
 	go func() {

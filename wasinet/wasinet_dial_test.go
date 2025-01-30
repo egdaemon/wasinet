@@ -2,12 +2,11 @@ package wasinet_test
 
 import (
 	"context"
-	"log"
 	"net"
+	"path/filepath"
 	"syscall"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/egdaemon/wasinet/wasinet"
 	"github.com/egdaemon/wasinet/wasinet/testx"
 	"github.com/stretchr/testify/require"
@@ -23,9 +22,7 @@ func checkDial(ctx context.Context, t testing.TB, li addrconn) {
 
 func checkDialErr(ctx context.Context, t testing.TB, li addrconn, expected *net.OpError) {
 	actual := new(net.OpError)
-	log.Println("sigh", li, li.Addr().Network(), li.Addr().String())
 	conn, err := wasinet.DialContext(ctx, li.Addr().Network(), li.Addr().String())
-	log.Printf("error %T - %s\n", err, spew.Sdump(err))
 	require.ErrorAs(t, err, &actual)
 
 	require.Equal(t, expected.Net, actual.Net)
@@ -43,25 +40,25 @@ func checkDialErr(ctx context.Context, t testing.TB, li addrconn, expected *net.
 func TestDialTCPIPv4(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkDial(ctx, t, listentcp(t, "tcp", ":0"))
+	checkDial(ctx, t, listenstream(t, "tcp", ":0"))
 }
 
 func TestDialTCP4IPv4(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkDial(ctx, t, listentcp(t, "tcp4", ":0"))
+	checkDial(ctx, t, listenstream(t, "tcp4", ":0"))
 }
 
 func TestDialTCPIPv6(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkDial(ctx, t, listentcp(t, "tcp", "[::]:0"))
+	checkDial(ctx, t, listenstream(t, "tcp", "[::]:0"))
 }
 
 func TestDialTCP6IPv6(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkDial(ctx, t, listentcp(t, "tcp6", "[::]:0"))
+	checkDial(ctx, t, listenstream(t, "tcp6", "[::]:0"))
 }
 
 func TestDialUDPIPv4(t *testing.T) {
@@ -80,6 +77,12 @@ func TestDialUDPIPv6(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
 	checkDial(ctx, t, listenudp(t, "udp", "[::]:0"))
+}
+
+func TestDialUnix(t *testing.T) {
+	ctx, done := testx.WithDeadline(t)
+	defer done()
+	checkDial(ctx, t, listenstream(t, "unix", filepath.Join(t.TempDir(), "socket")))
 }
 
 func TestDialTCPNoService(t *testing.T) {
