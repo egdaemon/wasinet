@@ -4,25 +4,28 @@ while the base test harness excercises the code. this software hasnt been battle
 we're working on it. help in this area is always appreciated.
 
 ### wasi networking functionality for golang.
+
 This is a quick and simple socket implementation for golang in wasi that doesnt try to interopt with the wider ecosystem
 that currently exists. the existing ecosystem requires munging the wasip1 namespace, which causes issues with incompatibilities.
 
-wasinet provides its own namespaced functions and *leverages* the wasip1 namespace where necessary. primarily clock and poll functionality.
+wasinet provides its own namespaced functions and _leverages_ the wasip1 namespace where necessary. primarily clock and poll functionality.
 
 ### known missing functionality.
+
 - system TLS certificates dont work.
-- unix sockets are untested.
 - many socopts are untested.
 
 these issues will be resolved if people provide written tests to the repository exposing the issues encountered or if we run into them in our own systems.
 
 ### what kinds of PRs we'll accept.
+
 - test cases.
-- implementation of missing functionality (soc options, weird non-standard *network* behaviors)
+- implementation of missing functionality (soc options, weird non-standard _network_ behaviors)
 - we'd take PRs that fix the interopt with the wider ecosystem as well, its just the authors opinion that currently its not worth the
-effort based on the internal api's they expose.
+  effort based on the internal api's they expose.
 
 ### commercial licensing available
+
 we understand many companies avoid GPLv3 licenses, feel free to reach out to [us](mailto:engineering@egdaemon.com) for alternative licensing for your company.
 
 ### usage
@@ -68,7 +71,7 @@ Due to the slow nature of committee and ecosystem politics between systems its t
 The wider ecosystem in the wild is based of wasmer edge implementation which is unnecessarily complicated to implement and runtimes like wazero
 don't have the api to properly intergrate networking piecemeal in the wasi_snapshot_preview1 namespace.
 
-Golang maintainers have little to no interest in a stopgap solution in the stdlib due to overly pedantic adherence to the go compatibility promises despite precendent for experimental features in stdlib existing in the past. 
+Golang maintainers have little to no interest in a stopgap solution in the stdlib due to overly pedantic adherence to the go compatibility promises despite precendent for experimental features in stdlib existing in the past.
 
 This has resulted in fragmented wasi_snapshot_preview1 implementations where you can't extend the wasi_snapshot_preview1 namespace with networking infrastructure and inconsistent behavior between the implementations even in the same langauge ecosystem.
 

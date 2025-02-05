@@ -49,43 +49,43 @@ func checkTransfer(ctx context.Context, t testing.TB, li addrconn, amount int64)
 func TestTransferTCPIPv4(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkTransfer(ctx, t, listentcp(t, "tcp", ":0"), bytesx.KiB)
+	checkTransfer(ctx, t, listenstream(t, "tcp", ":0"), bytesx.KiB)
 }
 
 func TestTransferTCP4IPv4(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkTransfer(ctx, t, listentcp(t, "tcp4", ":0"), bytesx.KiB)
+	checkTransfer(ctx, t, listenstream(t, "tcp4", ":0"), bytesx.KiB)
 }
 
 func TestTransferTCPIPv6(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkTransfer(ctx, t, listentcp(t, "tcp", "[::]:0"), bytesx.KiB)
+	checkTransfer(ctx, t, listenstream(t, "tcp", "[::]:0"), bytesx.KiB)
 }
 
 func TestTransferTCP6IPv6(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkTransfer(ctx, t, listentcp(t, "tcp6", "[::]:0"), bytesx.KiB)
+	checkTransfer(ctx, t, listenstream(t, "tcp6", "[::]:0"), bytesx.KiB)
 }
 
 func TestTransferTCPLarge16MB(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkTransfer(ctx, t, listentcp(t, "tcp", ":0"), 16*bytesx.MiB)
+	checkTransfer(ctx, t, listenstream(t, "tcp", ":0"), 16*bytesx.MiB)
 }
 
 func TestTransferUnix(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkTransfer(ctx, t, listentcp(t, "unix", filepath.Join(t.TempDir(), "test.socket")), bytesx.KiB)
+	checkTransfer(ctx, t, listenstream(t, "unix", filepath.Join(t.TempDir(), "test.socket")), bytesx.KiB)
 }
 
 func TestTransferUnixLarge(t *testing.T) {
 	ctx, done := testx.WithDeadline(t)
 	defer done()
-	checkTransfer(ctx, t, listentcp(t, "unix", filepath.Join(t.TempDir(), "test.socket")), 16*bytesx.MiB)
+	checkTransfer(ctx, t, listenstream(t, "unix", filepath.Join(t.TempDir(), "test.socket")), 16*bytesx.MiB)
 }
 
 func TestTransferHTTP(t *testing.T) {

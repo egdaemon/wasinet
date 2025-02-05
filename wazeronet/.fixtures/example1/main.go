@@ -20,6 +20,7 @@ func digest(b []byte) string {
 	d := md5.Sum(b)
 	return hex.EncodeToString(d[:])
 }
+
 func testhttpserver() (err error) {
 	var (
 		l   net.Listener
@@ -81,6 +82,7 @@ func wasierrorcode(errs ...syscall.Errno) {
 }
 
 func main() {
+	log.SetFlags(log.Flags() | log.Lshortfile)
 	var (
 		err     error
 		failure error
@@ -88,7 +90,7 @@ func main() {
 	wasinet.Hijack()
 	http.DefaultTransport = wasinet.InsecureHTTP()
 
-	wasierrorcode(syscall.ECONNREFUSED)
+	wasierrorcode(syscall.ENOENT)
 	ip, err := net.ResolveTCPAddr("tcp", "www.google.com:443")
 	if err == nil {
 		log.Println("IP ADDRESS", ip.IP, ip.Port)
@@ -103,10 +105,12 @@ func main() {
 		log.Fatalln("ip resolution failed", err)
 		failure = compact(failure, err)
 	}
-	log.Println("transfer data")
-	if err = checkTransfer(context.Background(), listentcp("tcp", ":0"), 1024); err != nil {
+
+	log.Println("tcp transfer data")
+	if err = checkTransfer(context.Background(), listenstream("tcp", ":0"), 1024); err != nil {
 		log.Fatalln("transfer test failed")
 	}
+
 	log.Println("http server")
 	if err = testhttpserver(); err != nil {
 		log.Println("http server failed", err)
@@ -131,7 +135,7 @@ type addrconn interface {
 	Addr() net.Addr
 }
 
-func listentcp(network, address string) net.Listener {
+func listenstream(network, address string) net.Listener {
 	li, err := net.Listen(network, address)
 	if err != nil {
 		panic(err)
@@ -185,11 +189,11 @@ func checkTransfer(ctx context.Context, li addrconn, amount int64) error {
 	}
 
 	if amount != n {
-		return fmt.Errorf("didnt receive all data", amount, "!=", n)
+		return fmt.Errorf("didnt receive all data %d != %d", amount, n)
 	}
 
 	if amount != amountsent {
-		return fmt.Errorf("didnt receive all data", amount, "!=", amountsent)
+		return fmt.Errorf("didnt receive all data %d != %d", amount, amountsent)
 	}
 
 	if !bytes.Equal(digestsent.Sum(nil), digestrecv.Sum(nil)) {
