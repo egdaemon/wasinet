@@ -45,7 +45,7 @@ import (
 func main() {
 	// required because of the tls certificate resolution doesnt work in wasi environments by default.
 	http.DefaultTransport = wasinet.InsecureHTTP()
-    http.Get("https://www.google.com")
+	http.Get("https://www.google.com")
 }
 ```
 
