@@ -60,3 +60,7 @@ func TestListenUDPIPv6(t *testing.T) {
 func TestListenUDP6IPv6(t *testing.T) {
 	checkListenPacket(t, "udp6", "[::]:0")
 }
+
+func TestListenUnix(t *testing.T) {
+	checkListen(t, "unix", "derp.socks")
+}
