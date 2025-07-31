@@ -17,6 +17,8 @@ import (
 	"github.com/egdaemon/wasinet/wazeronet"
 	"github.com/stretchr/testify/require"
 	"github.com/tetratelabs/wazero"
+	"github.com/tetratelabs/wazero/experimental"
+	"github.com/tetratelabs/wazero/experimental/logging"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
@@ -35,12 +37,14 @@ func compile(ctx context.Context, in string, output string) (err error) {
 }
 
 func compileAndRun(ctx context.Context, t *testing.T, path string, n wnetruntime.Socket, cfg func(wazero.ModuleConfig) wazero.ModuleConfig) error {
+	ctx = experimental.WithFunctionListenerFactory(ctx,
+		logging.NewHostLoggingListenerFactory(os.Stderr, logging.LogScopeAll))
+
 	// Create a new WebAssembly Runtime.
 	runtime := wazero.NewRuntimeWithConfig(
 		ctx,
 		wazero.NewRuntimeConfig().WithDebugInfoEnabled(true),
 	)
-
 	mcfg := wazero.NewModuleConfig().WithStdin(
 		os.Stdin,
 	).WithStderr(

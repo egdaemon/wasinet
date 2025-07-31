@@ -95,8 +95,7 @@ func main() {
 	if err == nil {
 		log.Println("IP ADDRESS", ip.IP, ip.Port)
 	} else {
-		log.Fatalln("tcp resolution failed", err)
-		failure = compact(failure, err)
+		log.Fatalf("tcp resolution failed: %T - %v\n", err, err)
 	}
 	addresses, err := net.DefaultResolver.LookupIP(context.Background(), "ip", "www.google.com")
 	if err == nil {
