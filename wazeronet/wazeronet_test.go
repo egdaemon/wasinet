@@ -17,8 +17,6 @@ import (
 	"github.com/egdaemon/wasinet/wazeronet"
 	"github.com/stretchr/testify/require"
 	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/experimental"
-	"github.com/tetratelabs/wazero/experimental/logging"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
@@ -37,14 +35,15 @@ func compile(ctx context.Context, in string, output string) (err error) {
 }
 
 func compileAndRun(ctx context.Context, t *testing.T, path string, n wnetruntime.Socket, cfg func(wazero.ModuleConfig) wazero.ModuleConfig) error {
-	ctx = experimental.WithFunctionListenerFactory(ctx,
-		logging.NewHostLoggingListenerFactory(os.Stderr, logging.LogScopeAll))
+	// ctx = experimental.WithFunctionListenerFactory(ctx,
+	// 	logging.NewHostLoggingListenerFactory(os.Stderr, logging.LogScopeAll))
 
 	// Create a new WebAssembly Runtime.
 	runtime := wazero.NewRuntimeWithConfig(
 		ctx,
 		wazero.NewRuntimeConfig().WithDebugInfoEnabled(true),
 	)
+
 	mcfg := wazero.NewModuleConfig().WithStdin(
 		os.Stdin,
 	).WithStderr(
@@ -99,46 +98,48 @@ func TestNetworkExample1(t *testing.T) {
 	require.NoError(t, compileAndRun(ctx, t, testx.Fixture("example1", "main.go"), wnetruntime.Unrestricted(), func(mc wazero.ModuleConfig) wazero.ModuleConfig { return mc }))
 }
 
-func TestUnixExample1(t *testing.T) {
-	ctx, done := testx.WithDeadline(t)
-	defer done()
+func TestUnix(t *testing.T) {
+	t.Run("example1", func(t *testing.T) {
+		ctx, done := testx.WithDeadline(t)
+		defer done()
 
-	ctx, done = context.WithTimeout(ctx, 5*time.Second)
-	defer done()
+		ctx, done = context.WithTimeout(ctx, 5*time.Second)
+		defer done()
 
-	tmpdir := t.TempDir()
-	li, err := net.Listen("unix", filepath.Join(tmpdir, "socket"))
-	require.NoError(t, err)
-	defer li.Close()
+		tmpdir := t.TempDir()
+		li, err := net.Listen("unix", filepath.Join(tmpdir, "socket"))
+		require.NoError(t, err)
+		defer li.Close()
 
-	go func() {
-		var (
-			err  error
-			conn net.Conn
-		)
-		for conn, err = li.Accept(); err == nil; conn, err = li.Accept() {
-			server, client := net.Pipe()
-			go func(c net.Conn) {
-				if _, err := io.Copy(c, server); err != nil {
-					log.Println("server copy failed", err)
-				}
-			}(conn)
-			go func(c net.Conn) {
-				defer c.Close()
-				if _, err := io.Copy(client, c); err != nil {
-					log.Println("client copy failed", err)
-				}
-			}(conn)
-		}
-	}()
+		go func() {
+			var (
+				err  error
+				conn net.Conn
+			)
+			for conn, err = li.Accept(); err == nil; conn, err = li.Accept() {
+				server, client := net.Pipe()
+				go func(c net.Conn) {
+					if _, err := io.Copy(c, server); err != nil {
+						log.Println("server copy failed", err)
+					}
+				}(conn)
+				go func(c net.Conn) {
+					defer c.Close()
+					if _, err := io.Copy(client, c); err != nil {
+						log.Println("client copy failed", err)
+					}
+				}(conn)
+			}
+		}()
 
-	n := wnetruntime.Unrestricted(wnetruntime.OptionFSPrefixes(wnetruntime.FSPrefix{Host: tmpdir, Guest: "/test"}))
+		n := wnetruntime.Unrestricted(wnetruntime.OptionFSPrefixes(wnetruntime.FSPrefix{Host: tmpdir, Guest: "/test"}))
 
-	require.NoError(t, compileAndRun(ctx, t, testx.Fixture("example2", "main.go"), n, func(mc wazero.ModuleConfig) wazero.ModuleConfig {
-		return mc.WithFSConfig(
-			wazero.NewFSConfig().WithDirMount(
-				tmpdir, "/test",
-			),
-		)
-	}))
+		require.NoError(t, compileAndRun(ctx, t, testx.Fixture("example2", "main.go"), n, func(mc wazero.ModuleConfig) wazero.ModuleConfig {
+			return mc.WithFSConfig(
+				wazero.NewFSConfig().WithDirMount(
+					tmpdir, "/test",
+				),
+			)
+		}))
+	})
 }
