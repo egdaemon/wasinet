@@ -42,6 +42,7 @@ type Socket interface {
 
 type IP interface {
 	Allow(...netip.Prefix) IP
+	Block(...netip.Prefix) IP
 }
 
 type FSPrefix struct {
@@ -79,6 +80,12 @@ func OptionAllow(cidrs ...netip.Prefix) Option {
 	}
 }
 
+func OptionBlock(cidrs ...netip.Prefix) Option {
+	return func(s *network) {
+		s.block = append(s.block, cidrs...)
+	}
+}
+
 func OptionFSPrefixes(prefixes ...FSPrefix) Option {
 	return func(n *network) {
 		n.fsmap = prefixes
@@ -101,13 +108,86 @@ func New(opts ...Option) Socket {
 	return langx.Autoptr(langx.Clone(network{}, opts...))
 }
 
+// private, loopback, link-local, and multicast address space blocked by
+// default by PublicOnly.
+var privatePrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("127.0.0.0/8"),
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("224.0.0.0/4"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("::1/128"),
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("ff00::/8"),
+}
+
+// PublicOnly restricts network access to public IP address space, blocking
+// private, loopback, link-local, and multicast ranges by default. opts are
+// applied afterwards and can widen or narrow the defaults.
+func PublicOnly(opts ...Option) Socket {
+	return langx.Autoptr(
+		langx.Clone(
+			network{
+				block: privatePrefixes,
+			},
+			opts...,
+		),
+	)
+}
+
 type network struct {
 	allow []netip.Prefix
+	block []netip.Prefix
 	fsmap []FSPrefix
+}
+
+// sockaddrAddr extracts the IP contained within an inet sockaddr. ok is
+// false for sockaddr kinds that don't carry an IP (e.g. unix sockets).
+func sockaddrAddr(sa unix.Sockaddr) (addr netip.Addr, ok bool) {
+	switch t := sa.(type) {
+	case *unix.SockaddrInet4:
+		return netip.AddrFrom4(t.Addr), true
+	case *unix.SockaddrInet6:
+		return netip.AddrFrom16(t.Addr), true
+	default:
+		return netip.Addr{}, false
+	}
+}
+
+// restricted enforces the allow list before the block list against sa's
+// address: a match in the allow list is always permitted, otherwise a match
+// in the block list is rejected.
+func (t network) restricted(sa unix.Sockaddr) error {
+	addr, ok := sockaddrAddr(sa)
+	if !ok {
+		return nil
+	}
+
+	for _, p := range t.allow {
+		if p.Contains(addr) {
+			return nil
+		}
+	}
+
+	for _, p := range t.block {
+		if p.Contains(addr) {
+			return unix.EACCES
+		}
+	}
+
+	return nil
 }
 
 func (t network) Bind(ctx context.Context, fd int, sa unix.Sockaddr) error {
 	// slog.Log(ctx, slog.LevelDebug, "sock_bind", slog.Int("fd", fd), slog.String("addr", fmt.Sprintf("%v", sa)))
+	if err := t.restricted(sa); err != nil {
+		return err
+	}
 	return unix.Bind(fd, sa)
 }
 
@@ -124,6 +204,9 @@ func (t network) Connect(ctx context.Context, fd int, sa unix.Sockaddr) (err err
 
 		return unix.Connect(fd, actual)
 	default:
+		if err := t.restricted(sa); err != nil {
+			return err
+		}
 		// slog.Log(ctx, slog.LevelDebug, "sock_connect", slog.Int("fd", fd), slog.String("addr", fmt.Sprintf("%v", sa)))
 		return unix.Connect(fd, sa)
 	}
@@ -179,6 +262,9 @@ func (t network) SendTo(ctx context.Context, fd int, sa unix.Sockaddr, vecs [][]
 		// but for unix sockets it'll return syscall.EISCONN
 		return unix.SendmsgBuffers(int(fd), vecs, oob, nil, int(flags))
 	default:
+		if err := t.restricted(sa); err != nil {
+			return 0, err
+		}
 		return unix.SendmsgBuffers(int(fd), vecs, oob, sa, int(flags))
 	}
 }

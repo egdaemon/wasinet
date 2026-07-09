@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -141,5 +142,98 @@ func TestUnix(t *testing.T) {
 				),
 			)
 		}))
+	})
+}
+
+// listenloopback starts a host-side (non-wasi) tcp listener that pipes any
+// accepted connection back to itself, mirroring TestUnix's setup. it exists
+// purely so the wasm guest has something local to dial.
+func listenloopback(t *testing.T) net.Listener {
+	li, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { li.Close() })
+
+	go func() {
+		var (
+			err  error
+			conn net.Conn
+		)
+		for conn, err = li.Accept(); err == nil; conn, err = li.Accept() {
+			server, client := net.Pipe()
+			go func(c net.Conn) {
+				if _, err := io.Copy(c, server); err != nil {
+					log.Println("server copy failed", err)
+				}
+			}(conn)
+			go func(c net.Conn) {
+				defer c.Close()
+				if _, err := io.Copy(client, c); err != nil {
+					log.Println("client copy failed", err)
+				}
+			}(conn)
+		}
+	}()
+
+	return li
+}
+
+func withDialAddr(addr string) func(wazero.ModuleConfig) wazero.ModuleConfig {
+	return func(mc wazero.ModuleConfig) wazero.ModuleConfig {
+		return mc.WithEnv("DIAL_ADDR", addr)
+	}
+}
+
+func TestNetworkBlockList(t *testing.T) {
+	t.Run("blocked prefix rejects the connection", func(t *testing.T) {
+		ctx, done := testx.WithDeadline(t)
+		defer done()
+
+		li := listenloopback(t)
+		n := wnetruntime.New(wnetruntime.OptionBlock(netip.MustParsePrefix("127.0.0.0/8")))
+
+		require.Error(t, compileAndRun(ctx, t, testx.Fixture("blocklist", "main.go"), n, withDialAddr(li.Addr().String())))
+	})
+
+	t.Run("unrelated block prefix permits the connection", func(t *testing.T) {
+		ctx, done := testx.WithDeadline(t)
+		defer done()
+
+		li := listenloopback(t)
+		n := wnetruntime.New(wnetruntime.OptionBlock(netip.MustParsePrefix("10.0.0.0/8")))
+
+		require.NoError(t, compileAndRun(ctx, t, testx.Fixture("blocklist", "main.go"), n, withDialAddr(li.Addr().String())))
+	})
+
+	t.Run("allowed prefix permits the connection", func(t *testing.T) {
+		ctx, done := testx.WithDeadline(t)
+		defer done()
+
+		li := listenloopback(t)
+		n := wnetruntime.New(wnetruntime.OptionAllow(netip.MustParsePrefix("127.0.0.0/8")))
+
+		require.NoError(t, compileAndRun(ctx, t, testx.Fixture("blocklist", "main.go"), n, withDialAddr(li.Addr().String())))
+	})
+
+	t.Run("allow takes precedence over an overlapping block", func(t *testing.T) {
+		ctx, done := testx.WithDeadline(t)
+		defer done()
+
+		li := listenloopback(t)
+		n := wnetruntime.New(
+			wnetruntime.OptionAllow(netip.MustParsePrefix("127.0.0.1/32")),
+			wnetruntime.OptionBlock(netip.MustParsePrefix("127.0.0.0/8")),
+		)
+
+		require.NoError(t, compileAndRun(ctx, t, testx.Fixture("blocklist", "main.go"), n, withDialAddr(li.Addr().String())))
+	})
+
+	t.Run("PublicOnly blocks loopback by default", func(t *testing.T) {
+		ctx, done := testx.WithDeadline(t)
+		defer done()
+
+		li := listenloopback(t)
+		n := wnetruntime.PublicOnly()
+
+		require.Error(t, compileAndRun(ctx, t, testx.Fixture("blocklist", "main.go"), n, withDialAddr(li.Addr().String())))
 	})
 }
