@@ -1,6 +1,7 @@
 package wasinet_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/egdaemon/wasinet/wasinet"
@@ -62,5 +63,5 @@ func TestListenUDP6IPv6(t *testing.T) {
 }
 
 func TestListenUnix(t *testing.T) {
-	checkListen(t, "unix", "derp.socks")
+	checkListen(t, "unix", filepath.Join(t.TempDir(), "derp.socks"))
 }
