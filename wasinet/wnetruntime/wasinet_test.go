@@ -49,45 +49,49 @@ func TestNetworkRestricted(t *testing.T) {
 	})
 
 	t.Run("block list rejects matching address", func(t *testing.T) {
-		n := network{block: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}}
+		n := network{Firewall: Firewall{Block: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}}}
 		require.ErrorIs(t, n.restricted(inet4("10.1.2.3")), unix.EACCES)
 	})
 
 	t.Run("block list permits non matching address", func(t *testing.T) {
-		n := network{block: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}}
+		n := network{Firewall: Firewall{Block: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}}}
 		require.NoError(t, n.restricted(inet4("8.8.8.8")))
 	})
 
 	t.Run("allow list takes precedence over block list", func(t *testing.T) {
 		n := network{
-			allow: []netip.Prefix{netip.MustParsePrefix("10.1.0.0/16")},
-			block: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")},
+			Firewall: Firewall{
+				Allow: []netip.Prefix{netip.MustParsePrefix("10.1.0.0/16")},
+				Block: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")},
+			},
 		}
 		require.NoError(t, n.restricted(inet4("10.1.2.3")))
 	})
 
 	t.Run("outside allow still checked against block", func(t *testing.T) {
 		n := network{
-			allow: []netip.Prefix{netip.MustParsePrefix("10.2.0.0/16")},
-			block: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")},
+			Firewall: Firewall{
+				Allow: []netip.Prefix{netip.MustParsePrefix("10.2.0.0/16")},
+				Block: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")},
+			},
 		}
 		require.ErrorIs(t, n.restricted(inet4("10.1.2.3")), unix.EACCES)
 	})
 
 	t.Run("non inet sockaddr is never restricted", func(t *testing.T) {
-		n := network{block: []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0")}}
+		n := network{Firewall: Firewall{Block: []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0")}}}
 		require.NoError(t, n.restricted(&unix.SockaddrUnix{Name: "/tmp/foo"}))
 	})
 
 	t.Run("ipv6", func(t *testing.T) {
-		n := network{block: []netip.Prefix{netip.MustParsePrefix("fc00::/7")}}
+		n := network{Firewall: Firewall{Block: []netip.Prefix{netip.MustParsePrefix("fc00::/7")}}}
 		require.ErrorIs(t, n.restricted(inet6("fd00::1")), unix.EACCES)
 		require.NoError(t, n.restricted(inet6("2001:4860:4860::8888")))
 	})
 }
 
 func TestPublicOnlyBlocksPrivateRanges(t *testing.T) {
-	n := network{block: privatePrefixes}
+	n := network{Firewall: Firewall{Block: PrivatePrefixes()}}
 
 	blocked4 := []string{
 		"10.1.2.3", "172.16.0.1", "192.168.1.1", "127.0.0.1",

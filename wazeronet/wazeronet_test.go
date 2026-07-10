@@ -189,7 +189,7 @@ func TestNetworkBlockList(t *testing.T) {
 		defer done()
 
 		li := listenloopback(t)
-		n := wnetruntime.New(wnetruntime.OptionBlock(netip.MustParsePrefix("127.0.0.0/8")))
+		n := wnetruntime.New(wnetruntime.OptionFirewall(wnetruntime.NewFirewall(wnetruntime.FirewallOptionBlock(netip.MustParsePrefix("127.0.0.0/8")))))
 
 		require.Error(t, compileAndRun(ctx, t, testx.Fixture("blocklist", "main.go"), n, withDialAddr(li.Addr().String())))
 	})
@@ -199,7 +199,7 @@ func TestNetworkBlockList(t *testing.T) {
 		defer done()
 
 		li := listenloopback(t)
-		n := wnetruntime.New(wnetruntime.OptionBlock(netip.MustParsePrefix("10.0.0.0/8")))
+		n := wnetruntime.New(wnetruntime.OptionFirewall(wnetruntime.NewFirewall(wnetruntime.FirewallOptionBlock(netip.MustParsePrefix("10.0.0.0/8")))))
 
 		require.NoError(t, compileAndRun(ctx, t, testx.Fixture("blocklist", "main.go"), n, withDialAddr(li.Addr().String())))
 	})
@@ -209,7 +209,7 @@ func TestNetworkBlockList(t *testing.T) {
 		defer done()
 
 		li := listenloopback(t)
-		n := wnetruntime.New(wnetruntime.OptionAllow(netip.MustParsePrefix("127.0.0.0/8")))
+		n := wnetruntime.New(wnetruntime.OptionFirewall(wnetruntime.NewFirewall(wnetruntime.FirewallOptionAllow(netip.MustParsePrefix("127.0.0.0/8")))))
 
 		require.NoError(t, compileAndRun(ctx, t, testx.Fixture("blocklist", "main.go"), n, withDialAddr(li.Addr().String())))
 	})
@@ -220,8 +220,10 @@ func TestNetworkBlockList(t *testing.T) {
 
 		li := listenloopback(t)
 		n := wnetruntime.New(
-			wnetruntime.OptionAllow(netip.MustParsePrefix("127.0.0.1/32")),
-			wnetruntime.OptionBlock(netip.MustParsePrefix("127.0.0.0/8")),
+			wnetruntime.OptionFirewall(wnetruntime.NewFirewall(
+				wnetruntime.FirewallOptionAllow(netip.MustParsePrefix("127.0.0.1/32")),
+				wnetruntime.FirewallOptionBlock(netip.MustParsePrefix("127.0.0.0/8")),
+			)),
 		)
 
 		require.NoError(t, compileAndRun(ctx, t, testx.Fixture("blocklist", "main.go"), n, withDialAddr(li.Addr().String())))
