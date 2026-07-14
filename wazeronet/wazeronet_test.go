@@ -191,7 +191,7 @@ func TestNetworkBlockList(t *testing.T) {
 		li := listenloopback(t)
 		n := wnetruntime.New(wnetruntime.OptionFirewall(wnetruntime.NewFirewall(wnetruntime.FirewallOptionBlock(netip.MustParsePrefix("127.0.0.0/8")))))
 
-		require.Error(t, compileAndRun(ctx, t, testx.Fixture("blocklist", "main.go"), n, withDialAddr(li.Addr().String())))
+		require.Error(t, compileAndRun(ctx, t, testx.Fixture("example3", "main.go"), n, withDialAddr(li.Addr().String())))
 	})
 
 	t.Run("unrelated block prefix permits the connection", func(t *testing.T) {
@@ -201,7 +201,7 @@ func TestNetworkBlockList(t *testing.T) {
 		li := listenloopback(t)
 		n := wnetruntime.New(wnetruntime.OptionFirewall(wnetruntime.NewFirewall(wnetruntime.FirewallOptionBlock(netip.MustParsePrefix("10.0.0.0/8")))))
 
-		require.NoError(t, compileAndRun(ctx, t, testx.Fixture("blocklist", "main.go"), n, withDialAddr(li.Addr().String())))
+		require.NoError(t, compileAndRun(ctx, t, testx.Fixture("example3", "main.go"), n, withDialAddr(li.Addr().String())))
 	})
 
 	t.Run("allowed prefix permits the connection", func(t *testing.T) {
@@ -211,7 +211,7 @@ func TestNetworkBlockList(t *testing.T) {
 		li := listenloopback(t)
 		n := wnetruntime.New(wnetruntime.OptionFirewall(wnetruntime.NewFirewall(wnetruntime.FirewallOptionAllow(netip.MustParsePrefix("127.0.0.0/8")))))
 
-		require.NoError(t, compileAndRun(ctx, t, testx.Fixture("blocklist", "main.go"), n, withDialAddr(li.Addr().String())))
+		require.NoError(t, compileAndRun(ctx, t, testx.Fixture("example3", "main.go"), n, withDialAddr(li.Addr().String())))
 	})
 
 	t.Run("allow takes precedence over an overlapping block", func(t *testing.T) {
@@ -226,7 +226,7 @@ func TestNetworkBlockList(t *testing.T) {
 			)),
 		)
 
-		require.NoError(t, compileAndRun(ctx, t, testx.Fixture("blocklist", "main.go"), n, withDialAddr(li.Addr().String())))
+		require.NoError(t, compileAndRun(ctx, t, testx.Fixture("example3", "main.go"), n, withDialAddr(li.Addr().String())))
 	})
 
 	t.Run("PublicOnly blocks loopback by default", func(t *testing.T) {
@@ -236,6 +236,6 @@ func TestNetworkBlockList(t *testing.T) {
 		li := listenloopback(t)
 		n := wnetruntime.PublicOnly()
 
-		require.Error(t, compileAndRun(ctx, t, testx.Fixture("blocklist", "main.go"), n, withDialAddr(li.Addr().String())))
+		require.Error(t, compileAndRun(ctx, t, testx.Fixture("example3", "main.go"), n, withDialAddr(li.Addr().String())))
 	})
 }
