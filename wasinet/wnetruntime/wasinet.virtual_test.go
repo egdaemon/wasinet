@@ -168,6 +168,26 @@ func TestVirtualStreamFdLifecycle(t *testing.T) {
 	require.ErrorIs(t, err, unix.EBADF)
 }
 
+func TestVirtualStreamRecvFromPeerClose(t *testing.T) {
+	client, server := net.Pipe()
+	dialer := &recordingDialer{conn: client}
+	packets := &recordingPacketDialer{}
+	fw := Firewall{Allow: []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0")}}
+	v := Virtual(dialer, packets, net.DefaultResolver, fw)
+	ctx := context.Background()
+
+	fd, err := v.Open(ctx, WASI_AF_INET, unix.SOCK_STREAM, 0)
+	require.NoError(t, err)
+
+	sa := inet4("1.2.3.4")
+	sa.Port = 9
+	require.NoError(t, v.Connect(ctx, fd, sa))
+	require.NoError(t, server.Close())
+
+	n := recvFromWithRetry(t, ctx, v, fd, make([]byte, 4))
+	require.Equal(t, 0, n)
+}
+
 func TestVirtualPacketDialerDeferred(t *testing.T) {
 	dialer := &recordingDialer{}
 	packets := &recordingPacketDialer{}
