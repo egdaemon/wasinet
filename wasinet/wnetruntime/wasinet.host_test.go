@@ -5,13 +5,17 @@ package wnetruntime
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
+	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/egdaemon/wasinet/wasinet/ffi"
 	"github.com/egdaemon/wasinet/wasinet/stdlib/wasip1syscall"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 func TestClassifyLookupErrno(t *testing.T) {
@@ -112,4 +116,85 @@ func TestSocketAddrIP(t *testing.T) {
 		require.Equal(t, uint32(net.IPv6len), ipreslen)
 		require.Equal(t, []byte(want.To16()), ipres)
 	})
+}
+
+func TestSocketShutdown(t *testing.T) {
+	// the guest speaks wasi numbering, sdflags: rd = 1, wr = 2, rdwr = 3.
+	// the host fn receives the host's numbering, which differs (linux rdwr = 2).
+	const (
+		wasiRd   = 0x1
+		wasiWr   = 0x2
+		wasiRdWr = wasiRd | wasiWr
+	)
+
+	call := func(how int32) (host int, called bool, errno syscall.Errno) {
+		fn := SocketShutdown(func(ctx context.Context, fd, how int) error {
+			host, called = how, true
+			return nil
+		})
+
+		errno = fn(context.Background(), ffi.Native{}, 3, how)
+		return host, called, errno
+	}
+
+	t.Run("wasi read maps to the host read", func(t *testing.T) {
+		host, called, errno := call(wasiRd)
+		require.Equal(t, syscall.Errno(0), errno)
+		require.True(t, called)
+		require.Equal(t, unix.SHUT_RD, host)
+	})
+
+	t.Run("wasi write maps to the host write", func(t *testing.T) {
+		host, called, errno := call(wasiWr)
+		require.Equal(t, syscall.Errno(0), errno)
+		require.True(t, called)
+		require.Equal(t, unix.SHUT_WR, host)
+	})
+
+	t.Run("wasi read and write maps to the host read and write, not an invalid value", func(t *testing.T) {
+		host, called, errno := call(wasiRdWr)
+		require.Equal(t, syscall.Errno(0), errno)
+		require.True(t, called)
+		require.Equal(t, unix.SHUT_RDWR, host)
+	})
+
+	t.Run("unknown flags are rejected without reaching the host", func(t *testing.T) {
+		for _, how := range []int32{0, 4, 7, -1} {
+			_, called, errno := call(how)
+			require.False(t, called, "how=%d", how)
+			require.Equal(t, wasip1syscall.EINVAL, errno, "how=%d", how)
+		}
+	})
+}
+
+// a real connection must observe the peer's shutdown, which only happens when the
+// guest's flags are translated properly.
+func TestNetworkShutdownReleasesPeer(t *testing.T) {
+	l, err := net.Listen("unix", filepath.Join(t.TempDir(), "s.sock"))
+	require.NoError(t, err)
+	defer l.Close()
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		c, _ := l.Accept()
+		accepted <- c
+	}()
+
+	client, err := net.Dial("unix", l.Addr().String())
+	require.NoError(t, err)
+	defer client.Close()
+
+	server := <-accepted
+	defer server.Close()
+
+	raw, err := client.(*net.UnixConn).File()
+	require.NoError(t, err)
+	defer raw.Close()
+
+	fn := SocketShutdown(network{}.Shutdown)
+	require.Equal(t, syscall.Errno(0), fn(context.Background(), ffi.Native{}, int32(raw.Fd()), 0x3))
+
+	server.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, err = server.Read(make([]byte, 1))
+	require.ErrorIs(t, err, io.EOF)
 }
