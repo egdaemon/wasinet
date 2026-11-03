@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/egdaemon/wasinet/wasinet"
 )
@@ -24,7 +25,14 @@ func main() {
 		log.Fatalln("unable to stat socket path", err)
 	}
 
-	if err = checkTransfer(context.Background(), "unix", "/test/socket", 1024); err != nil {
+	amount := int64(1024)
+	if v := os.Getenv("TRANSFER_AMOUNT"); v != "" {
+		if amount, err = strconv.ParseInt(v, 10, 64); err != nil {
+			log.Fatalln("invalid TRANSFER_AMOUNT", err)
+		}
+	}
+
+	if err = checkTransfer(context.Background(), "unix", "/test/socket", amount); err != nil {
 		log.Fatalln("transfer test failed", err)
 	}
 }

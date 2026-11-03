@@ -227,12 +227,32 @@ func (fd *netFD) Read(p []byte) (n int, err error) {
 	return n, err
 }
 
+// Write sends all of p. the host socket is non-blocking, so a send is partial or EAGAIN
+// whenever its send buffer is full; the loop yields until the remainder is accepted.
+// a zero length p is still sent once, which matters for datagrams.
 func (fd *netFD) Write(p []byte) (nn int, err error) {
+	var (
+		n int
+	)
+
 	if fd.rsockaddr == nil {
 		return 0, errMissingAddress
 	}
 
-	nn, err = wasip1syscall.SendToSingle(fd.sysfd, p, nil, fd.rsockaddr, 0)
+	for {
+		n, err = wasip1syscall.SendToSingle(fd.sysfd, p[nn:], nil, fd.rsockaddr, 0)
+		nn += n
+		switch ffierrors.Errno(err) {
+		case syscall.EINTR, syscall.EAGAIN:
+			runtime.Gosched()
+			continue
+		}
+
+		if err != nil || nn >= len(p) {
+			break
+		}
+	}
+
 	runtime.KeepAlive(fd)
 	return nn, wrapSyscallError(writeSyscallName, err)
 }
