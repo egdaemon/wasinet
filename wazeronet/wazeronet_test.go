@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -100,11 +101,11 @@ func TestNetworkExample1(t *testing.T) {
 }
 
 func TestUnix(t *testing.T) {
-	t.Run("example1", func(t *testing.T) {
+	transfer := func(t *testing.T, amount int) {
 		ctx, done := testx.WithDeadline(t)
 		defer done()
 
-		ctx, done = context.WithTimeout(ctx, 5*time.Second)
+		ctx, done = context.WithTimeout(ctx, 30*time.Second)
 		defer done()
 
 		tmpdir := t.TempDir()
@@ -140,8 +141,17 @@ func TestUnix(t *testing.T) {
 				wazero.NewFSConfig().WithDirMount(
 					tmpdir, "/test",
 				),
-			)
+			).WithEnv("TRANSFER_AMOUNT", strconv.Itoa(amount))
 		}))
+	}
+
+	t.Run("example1", func(t *testing.T) {
+		transfer(t, 1024)
+	})
+
+	// writes beyond the socket's send buffer (8 KiB by default on macOS) are partial or EAGAIN.
+	t.Run("16MiB", func(t *testing.T) {
+		transfer(t, 16<<20)
 	})
 }
 
