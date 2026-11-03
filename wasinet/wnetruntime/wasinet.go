@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/egdaemon/wasinet/wasinet/internal/errorsx"
 	"github.com/egdaemon/wasinet/wasinet/internal/langx"
 	"golang.org/x/sys/unix"
 )
@@ -208,9 +209,20 @@ func (t network) PeerAddr(ctx context.Context, fd int) (_ unix.Sockaddr, err err
 	return unix.Getpeername(fd)
 }
 
+// Shutdown also closes fd when both directions are shut down: the guest only does that from Close,
+// and its own fd_close never reaches the host socket, so the fd would otherwise stay open. virtual
+// releases its connection the same way. macOS rejects the shutdown with ENOTCONN once the peer has
+// closed its side, which must not keep the fd open either.
 func (t network) Shutdown(ctx context.Context, fd, how int) error {
 	// slog.Log(ctx, slog.LevelDebug, "sock_shutdown", slog.Int("fd", fd), slog.Int("how", how))
-	return unix.Shutdown(fd, how)
+	if how != unix.SHUT_RDWR {
+		return unix.Shutdown(fd, how)
+	}
+
+	return errorsx.Compact(
+		errorsx.Ignore(unix.Shutdown(fd, how), unix.ENOTCONN),
+		unix.Close(fd),
+	)
 }
 
 func (t network) AddrIP(ctx context.Context, network string, address string) ([]net.IP, error) {
