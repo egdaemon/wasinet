@@ -198,3 +198,55 @@ func TestNetworkShutdownReleasesPeer(t *testing.T) {
 	_, err = server.Read(make([]byte, 1))
 	require.ErrorIs(t, err, io.EOF)
 }
+
+func TestNetworkShutdown(t *testing.T) {
+	pair := func(t *testing.T) (int, int) {
+		fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+		require.NoError(t, err)
+		return fds[0], fds[1]
+	}
+
+	closed := func(t *testing.T, fd int) {
+		_, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+		require.ErrorIs(t, err, unix.EBADF)
+	}
+
+	eof := func(t *testing.T, fd int) {
+		n, err := unix.Read(fd, make([]byte, 1))
+		require.NoError(t, err)
+		require.Zero(t, n)
+	}
+
+	t.Run("both directions close the fd", func(t *testing.T) {
+		guest, peer := pair(t)
+		defer unix.Close(peer)
+
+		require.NoError(t, network{}.Shutdown(t.Context(), guest, unix.SHUT_RDWR))
+		closed(t, guest)
+		eof(t, peer)
+	})
+
+	t.Run("both directions close the fd after the peer half closed", func(t *testing.T) {
+		guest, peer := pair(t)
+		defer unix.Close(peer)
+
+		require.NoError(t, unix.Shutdown(peer, unix.SHUT_WR))
+		require.NoError(t, network{}.Shutdown(t.Context(), guest, unix.SHUT_RDWR))
+		closed(t, guest)
+		eof(t, peer)
+	})
+
+	t.Run("one direction keeps the fd open", func(t *testing.T) {
+		guest, peer := pair(t)
+		defer unix.Close(peer)
+		defer unix.Close(guest)
+
+		require.NoError(t, network{}.Shutdown(t.Context(), guest, unix.SHUT_WR))
+		eof(t, peer)
+		_, err := unix.Write(peer, []byte("x"))
+		require.NoError(t, err)
+		n, err := unix.Read(guest, make([]byte, 1))
+		require.NoError(t, err)
+		require.Equal(t, 1, n)
+	})
+}
