@@ -157,6 +157,10 @@ func sockaddrAddr(sa unix.Sockaddr) (addr netip.Addr, ok bool) {
 
 func (t network) Bind(ctx context.Context, fd int, sa unix.Sockaddr) error {
 	// slog.Log(ctx, slog.LevelDebug, "sock_bind", slog.Int("fd", fd), slog.String("addr", fmt.Sprintf("%v", sa)))
+	if actual, ok := sa.(*unix.SockaddrUnix); ok {
+		return unix.Bind(fd, &unix.SockaddrUnix{Name: fsremap(t.fsmap).Remap(actual.Name)})
+	}
+
 	if err := t.restricted(sa); err != nil {
 		return err
 	}

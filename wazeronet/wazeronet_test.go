@@ -153,6 +153,48 @@ func TestUnix(t *testing.T) {
 	t.Run("16MiB", func(t *testing.T) {
 		transfer(t, 16<<20)
 	})
+
+	t.Run("guest listens", func(t *testing.T) {
+		var (
+			conn   net.Conn
+			err    error
+			echoed = make([]byte, 5)
+		)
+		ctx, done := testx.WithDeadline(t)
+		defer done()
+
+		ctx, done = context.WithTimeout(ctx, 30*time.Second)
+		defer done()
+
+		tmpdir := t.TempDir()
+		socket := filepath.Join(tmpdir, "listen.socket")
+		n := wnetruntime.Unrestricted(wnetruntime.OptionFSPrefixes(wnetruntime.FSPrefix{Host: tmpdir, Guest: "/test"}))
+
+		guest := make(chan error, 1)
+		go func() {
+			guest <- compileAndRun(ctx, t, testx.Fixture("example4", "main.go"), n, func(mc wazero.ModuleConfig) wazero.ModuleConfig {
+				return mc.WithFSConfig(wazero.NewFSConfig().WithDirMount(tmpdir, "/test"))
+			})
+		}()
+
+		// the guest compiles before it listens, so dial until the socket appears.
+		for conn, err = net.Dial("unix", socket); err != nil; conn, err = net.Dial("unix", socket) {
+			select {
+			case cause := <-guest:
+				require.NoError(t, cause)
+				require.FailNow(t, "guest exited without listening")
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+		defer conn.Close()
+
+		_, err = conn.Write([]byte("hello"))
+		require.NoError(t, err)
+		_, err = io.ReadFull(conn, echoed)
+		require.NoError(t, err)
+		require.Equal(t, "hello", string(echoed))
+		require.NoError(t, <-guest)
+	})
 }
 
 // listenloopback starts a host-side (non-wasi) tcp listener that pipes any
