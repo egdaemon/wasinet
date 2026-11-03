@@ -189,11 +189,10 @@ func (fd *netFD) Close() error {
 	)
 }
 
+// shutdown goes straight to the host: sysfd is a host socket that wasi's own fd table doesn't hold,
+// so shutting down pfd through wasi only ever fails with EBADF.
 func (fd *netFD) shutdown(how int) error {
-	err := errorsx.Compact(
-		fd.pfd.Shutdown(how),
-		wasip1syscall.Shutdown(fd.sysfd, how),
-	)
+	err := wasip1syscall.Shutdown(fd.sysfd, how)
 	runtime.KeepAlive(fd)
 	return wrapSyscallError("shutdown", err)
 }

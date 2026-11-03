@@ -155,6 +155,36 @@ func TestUnix(t *testing.T) {
 	})
 }
 
+func TestUnixHalfClose(t *testing.T) {
+	ctx, done := testx.WithDeadline(t)
+	defer done()
+
+	ctx, done = context.WithTimeout(ctx, 30*time.Second)
+	defer done()
+
+	tmpdir := t.TempDir()
+	li, err := net.Listen("unix", filepath.Join(tmpdir, "socket"))
+	require.NoError(t, err)
+	defer li.Close()
+
+	// echoes until the guest half closes, so the guest only sees EOF if its CloseWrite reached the host.
+	go func() {
+		conn, err := li.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		if _, err = io.Copy(conn, conn); err != nil {
+			log.Println("echo failed", err)
+		}
+	}()
+
+	n := wnetruntime.Unrestricted(wnetruntime.OptionFSPrefixes(wnetruntime.FSPrefix{Host: tmpdir, Guest: "/test"}))
+	require.NoError(t, compileAndRun(ctx, t, testx.Fixture("example5", "main.go"), n, func(mc wazero.ModuleConfig) wazero.ModuleConfig {
+		return mc.WithFSConfig(wazero.NewFSConfig().WithDirMount(tmpdir, "/test"))
+	}))
+}
+
 // listenloopback starts a host-side (non-wasi) tcp listener that pipes any
 // accepted connection back to itself, mirroring TestUnix's setup. it exists
 // purely so the wasm guest has something local to dial.
