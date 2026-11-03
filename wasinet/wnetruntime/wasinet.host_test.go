@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"syscall"
 	"testing"
@@ -248,5 +249,41 @@ func TestNetworkShutdown(t *testing.T) {
 		n, err := unix.Read(guest, make([]byte, 1))
 		require.NoError(t, err)
 		require.Equal(t, 1, n)
+	})
+}
+
+func TestNetworkAccept(t *testing.T) {
+	t.Run("accepted sockets are non-blocking and close on exec", func(t *testing.T) {
+		var (
+			n network
+		)
+
+		// unix socket paths are length limited, t.TempDir can exceed it.
+		dir, err := os.MkdirTemp("", "accept")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+		path := filepath.Join(dir, "s.sock")
+
+		fd, err := n.Open(t.Context(), unix.AF_UNIX, unix.SOCK_STREAM, 0)
+		require.NoError(t, err)
+		defer unix.Close(fd)
+		require.NoError(t, n.Bind(t.Context(), fd, &unix.SockaddrUnix{Name: path}))
+		require.NoError(t, n.Listen(t.Context(), fd, 1))
+
+		client, err := net.Dial("unix", path)
+		require.NoError(t, err)
+		defer client.Close()
+
+		nfd, _, err := n.Accept(t.Context(), fd)
+		require.NoError(t, err)
+		defer unix.Close(nfd)
+
+		status, err := unix.FcntlInt(uintptr(nfd), unix.F_GETFL, 0)
+		require.NoError(t, err)
+		require.NotZero(t, status&unix.O_NONBLOCK, "O_NONBLOCK")
+
+		flags, err := unix.FcntlInt(uintptr(nfd), unix.F_GETFD, 0)
+		require.NoError(t, err)
+		require.NotZero(t, flags&unix.FD_CLOEXEC, "FD_CLOEXEC")
 	})
 }
