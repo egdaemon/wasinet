@@ -227,6 +227,49 @@ func TestUnixHalfClose(t *testing.T) {
 	}))
 }
 
+func TestUnixDeadlines(t *testing.T) {
+	// t.TempDir is named after the test, and unix socket paths are length limited.
+	t.Run("expire and clear", func(t *testing.T) {
+		ctx, done := testx.WithDeadline(t)
+		defer done()
+
+		ctx, done = context.WithTimeout(ctx, 30*time.Second)
+		defer done()
+
+		tmpdir := t.TempDir()
+		li, err := net.Listen("unix", filepath.Join(tmpdir, "socket"))
+		require.NoError(t, err)
+		defer li.Close()
+
+		// answers ping with pong, then holds the connection open without reading or writing until
+		// the guest exits, so the guest's reads and writes can only end through their deadlines.
+		go func() {
+			var (
+				conn net.Conn
+				ping = make([]byte, 4)
+			)
+			if conn, err = li.Accept(); err != nil {
+				return
+			}
+			defer conn.Close()
+			if _, err = io.ReadFull(conn, ping); err != nil {
+				log.Println("read ping failed", err)
+				return
+			}
+			if _, err = conn.Write([]byte("pong")); err != nil {
+				log.Println("write pong failed", err)
+				return
+			}
+			<-ctx.Done()
+		}()
+
+		n := wnetruntime.Unrestricted(wnetruntime.OptionFSPrefixes(wnetruntime.FSPrefix{Host: tmpdir, Guest: "/test"}))
+		require.NoError(t, compileAndRun(ctx, t, testx.Fixture("example6", "main.go"), n, func(mc wazero.ModuleConfig) wazero.ModuleConfig {
+			return mc.WithFSConfig(wazero.NewFSConfig().WithDirMount(tmpdir, "/test"))
+		}))
+	})
+}
+
 // listenloopback starts a host-side (non-wasi) tcp listener that pipes any
 // accepted connection back to itself, mirroring TestUnix's setup. it exists
 // purely so the wasm guest has something local to dial.
