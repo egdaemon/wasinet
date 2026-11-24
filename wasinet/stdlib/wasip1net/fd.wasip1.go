@@ -45,6 +45,10 @@ type netFD struct {
 	laddr        net.Addr
 	raddr        net.Addr
 	rsockaddr    *wasip1syscall.RawSocketAddress
+
+	// the read and write deadlines in unix nanoseconds, zero for none.
+	rdeadline atomic.Int64
+	wdeadline atomic.Int64
 }
 
 func InitConnection(fd *netFD) (err error) {
@@ -208,6 +212,10 @@ func (fd *netFD) closeWrite() error {
 func (fd *netFD) Read(p []byte) (n int, err error) {
 	readone := func() (n int, err error) {
 		for {
+			if err = expired(&fd.rdeadline); err != nil {
+				return 0, err
+			}
+
 			if n, _, _, err = wasip1syscall.RecvFromsingle(fd.sysfd, p, nil, 0); err == nil {
 				return n, zeroEOF(n)
 			}
@@ -239,6 +247,10 @@ func (fd *netFD) Write(p []byte) (nn int, err error) {
 	}
 
 	for {
+		if err = expired(&fd.wdeadline); err != nil {
+			break
+		}
+
 		n, err = wasip1syscall.SendToSingle(fd.sysfd, p[nn:], nil, fd.rsockaddr, 0)
 		nn += n
 		switch ffierrors.Errno(err) {
@@ -257,20 +269,39 @@ func (fd *netFD) Write(p []byte) (nn int, err error) {
 }
 
 func (fd *netFD) SetDeadline(t time.Time) error {
-	return errorsx.Compact(
-		setDeadlineImpl(fd, t, wasip1syscall.SO_SNDTIMEO),
-		setDeadlineImpl(fd, t, wasip1syscall.SO_RCVTIMEO),
-	)
+	deadline(&fd.rdeadline, t)
+	deadline(&fd.wdeadline, t)
+	return nil
 }
 
 func (fd *netFD) SetReadDeadline(t time.Time) error {
-	err := setDeadlineImpl(fd, t, wasip1syscall.SO_RCVTIMEO)
-	return err
+	deadline(&fd.rdeadline, t)
+	return nil
 }
 
 func (fd *netFD) SetWriteDeadline(t time.Time) error {
-	err := setDeadlineImpl(fd, t, wasip1syscall.SO_SNDTIMEO)
-	return err
+	deadline(&fd.wdeadline, t)
+	return nil
+}
+
+// deadline stores t in d, the zero time as no deadline. The host socket is non-blocking, so a
+// timeout set on it never fires; the loops retrying operations that would block check d instead.
+func deadline(d *atomic.Int64, t time.Time) {
+	if t.IsZero() {
+		d.Store(0)
+		return
+	}
+
+	d.Store(t.UnixNano())
+}
+
+// expired returns os.ErrDeadlineExceeded once the deadline in d has passed.
+func expired(d *atomic.Int64) error {
+	if at := d.Load(); at != 0 && time.Now().UnixNano() >= at {
+		return os.ErrDeadlineExceeded
+	}
+
+	return nil
 }
 
 func zeroEOF(n int) error {
@@ -282,8 +313,15 @@ func zeroEOF(n int) error {
 }
 func (fd *netFD) readMsg(b, oob []byte) (n, oobn int, flags int, rsa wasip1syscall.RawSocketAddress, err error) {
 	readone := func() (n int, flags int, rsa wasip1syscall.RawSocketAddress, err error) {
+		var (
+			rflags int32
+		)
+
 		for {
-			var rflags int32
+			if err = expired(&fd.rdeadline); err != nil {
+				return 0, 0, rsa, err
+			}
+
 			if n, rsa, rflags, err = wasip1syscall.RecvFromsingle(fd.sysfd, b, oob, 0); err == nil {
 				return n, int(rflags), rsa, zeroEOF(n)
 			}
@@ -323,17 +361,4 @@ func (fd *netFD) dup() (f *os.File, err error) {
 	}
 
 	return newFile(ns, fd.name()), nil
-}
-
-// wasip1syscall.SO_RCVTIMEO
-func setDeadlineImpl(fd *netFD, t time.Time, mode uint32) error {
-	var d time.Duration
-	if !t.IsZero() {
-		d = time.Until(t)
-		if d == 0 {
-			d = -1 // don't confuse deadline right now with no deadline
-		}
-	}
-
-	return wasip1syscall.SetsockoptTimeval(fd.sysfd, uint32(fd.sotype), mode, d)
 }
