@@ -26,7 +26,7 @@ const (
 )
 
 const (
-	// SOL_SOCKET is the linux value; the host passes the level through to the native setsockopt.
+	// SOL_SOCKET is the wasi value; the host translates it, and the names above, to its system values (SockoptTranslate).
 	SOL_SOCKET = 0x1
 )
 
