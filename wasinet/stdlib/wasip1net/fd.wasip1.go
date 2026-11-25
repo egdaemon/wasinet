@@ -335,5 +335,5 @@ func setDeadlineImpl(fd *netFD, t time.Time, mode uint32) error {
 		}
 	}
 
-	return wasip1syscall.SetsockoptTimeval(fd.sysfd, uint32(fd.sotype), mode, d)
+	return wasip1syscall.SetsockoptTimeval(fd.sysfd, wasip1syscall.SOL_SOCKET, mode, d)
 }

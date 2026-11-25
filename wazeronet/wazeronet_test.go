@@ -3,6 +3,7 @@ package wazeronet_test
 import (
 	"context"
 	"crypto/rand"
+	"encoding/binary"
 	"io"
 	"log"
 	"net"
@@ -11,6 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -320,4 +323,83 @@ func TestNetworkBlockList(t *testing.T) {
 
 		require.Error(t, compileAndRun(ctx, t, testx.Fixture("example3", "main.go"), n, withDialAddr(li.Addr().String())))
 	})
+}
+
+// sockopt is a SetSocketOption call as it arrived at the host, after the wasi values the guest
+// sent have been translated to the host's system values.
+type sockopt struct {
+	level int
+	name  int
+	value []byte
+}
+
+// recordingsocket wraps a Socket and records every SetSocketOption call that crosses the wasi
+// boundary before delegating to the wrapped implementation.
+type recordingsocket struct {
+	wnetruntime.Socket
+	mu   sync.Mutex
+	opts []sockopt
+}
+
+func (t *recordingsocket) SetSocketOption(ctx context.Context, fd int, level, name int, value []byte) error {
+	t.mu.Lock()
+	t.opts = append(t.opts, sockopt{level: level, name: name, value: append([]byte(nil), value...)})
+	t.mu.Unlock()
+	return t.Socket.SetSocketOption(ctx, fd, level, name, value)
+}
+
+func TestSetsockoptTimeval(t *testing.T) {
+	ctx, done := testx.WithDeadline(t)
+	defer done()
+
+	li := listenloopback(t)
+	n := &recordingsocket{Socket: wnetruntime.Unrestricted()}
+
+	require.NoError(t, compileAndRun(ctx, t, testx.Fixture("example6", "main.go"), n, withDialAddr(li.Addr().String())))
+
+	type timeval struct {
+		name int
+		sec  int64
+		usec int64
+	}
+
+	var got []timeval
+	n.mu.Lock()
+	for _, o := range n.opts {
+		if o.name != syscall.SO_RCVTIMEO && o.name != syscall.SO_SNDTIMEO {
+			continue
+		}
+
+		require.Equal(t, syscall.SOL_SOCKET, o.level, "timeouts must be set at SOL_SOCKET")
+		require.Len(t, o.value, 16, "timeval is two int64s")
+		got = append(got, timeval{
+			name: o.name,
+			sec:  int64(binary.LittleEndian.Uint64(o.value[0:8])),
+			usec: int64(binary.LittleEndian.Uint64(o.value[8:16])),
+		})
+	}
+	n.mu.Unlock()
+
+	// the order is the one fixtures/example6 performs the steps in.
+	require.Len(t, got, 7)
+
+	// a deadline 1.5s away: whole seconds and the remaining microseconds. the remainder is under
+	// the full 500ms by however long the call took, and well above the 999 a millisecond count
+	// could ever produce.
+	for _, i := range []int{0, 1, 6} {
+		require.Equal(t, int64(1), got[i].sec)
+		require.Greater(t, got[i].usec, int64(400_000))
+		require.LessOrEqual(t, got[i].usec, int64(500_000))
+	}
+	require.Equal(t, syscall.SO_RCVTIMEO, got[0].name)
+	require.Equal(t, syscall.SO_SNDTIMEO, got[1].name)
+	require.Equal(t, syscall.SO_RCVTIMEO, got[6].name) // the datagram socket
+
+	// a zero time clears the timeout, which a zero timeval means.
+	require.Equal(t, timeval{name: syscall.SO_RCVTIMEO}, got[2])
+	require.Equal(t, timeval{name: syscall.SO_SNDTIMEO}, got[3])
+
+	// a deadline in the past must not become zero (no timeout): it is the smallest timeout.
+	require.Equal(t, timeval{name: syscall.SO_RCVTIMEO, usec: 1}, got[4])
+	require.Equal(t, timeval{name: syscall.SO_SNDTIMEO, usec: 1}, got[5])
 }

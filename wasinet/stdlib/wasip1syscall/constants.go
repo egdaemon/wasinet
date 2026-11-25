@@ -26,7 +26,8 @@ const (
 )
 
 const (
-	SOL_SOCKET = iota
+	// SOL_SOCKET is the linux value; the host passes the level through to the native setsockopt.
+	SOL_SOCKET = 0x1
 )
 
 const (

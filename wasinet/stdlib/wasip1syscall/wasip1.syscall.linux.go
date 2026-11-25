@@ -61,7 +61,7 @@ func sock_getsockopt(fd int32, level uint32, name uint32, dst unsafe.Pointer, _ 
 
 func sock_setsockopt(fd int32, level uint32, name uint32, valueptr unsafe.Pointer, valuelen uint32) syscall.Errno {
 	switch name {
-	case syscall.SO_LINGER: // this is untested.
+	case syscall.SO_LINGER, syscall.SO_RCVTIMEO, syscall.SO_SNDTIMEO: // linger is untested.
 		value := ffi.UnsafeClone[unix.Timeval](valueptr)
 		return ffierrors.Errno(unix.SetsockoptTimeval(int(fd), int(level), int(name), &value))
 	case syscall.SO_BINDTODEVICE: // this is untested.
