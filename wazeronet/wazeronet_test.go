@@ -42,6 +42,7 @@ func compile(ctx context.Context, in string, output string) (err error) {
 func compileAndRun(ctx context.Context, t *testing.T, path string, n wnetruntime.Socket, cfg func(wazero.ModuleConfig) wazero.ModuleConfig) error {
 	// ctx = experimental.WithFunctionListenerFactory(ctx,
 	// 	logging.NewHostLoggingListenerFactory(os.Stderr, logging.LogScopeAll))
+	ctx = wazeronet.WithPoller(ctx)
 
 	// Create a new WebAssembly Runtime.
 	runtime := wazero.NewRuntimeWithConfig(

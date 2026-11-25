@@ -130,22 +130,15 @@ func (fd *netFD) name() string {
 }
 
 func (fd *netFD) accept() (netfd *netFD, err error) {
-	acceptone := func() (nfd int, err error) {
-		for {
-			if nfd, _, err = wasip1syscall.Accept(fd.sysfd); err == nil {
-				return nfd, nil
-			}
+	var (
+		nfd int
+	)
 
-			switch ffierrors.Errno(err) {
-			case syscall.EINTR, syscall.EAGAIN:
-				runtime.Gosched()
-			default:
-				return -1, err
-			}
+	for nfd, _, err = wasip1syscall.Accept(fd.sysfd); wouldblock(err); nfd, _, err = wasip1syscall.Accept(fd.sysfd) {
+		if err = fd.waitRead(); err != nil {
+			return nil, err
 		}
 	}
-
-	nfd, err := acceptone()
 	if err != nil {
 		return nil, err
 	}
@@ -206,28 +199,20 @@ func (fd *netFD) closeWrite() error {
 }
 
 func (fd *netFD) Read(p []byte) (n int, err error) {
-	readone := func() (n int, err error) {
-		for {
-			if n, _, _, err = wasip1syscall.RecvFromsingle(fd.sysfd, p, nil, 0); err == nil {
-				return n, zeroEOF(n)
-			}
-
-			switch ffierrors.Errno(err) {
-			case syscall.EINTR, syscall.EAGAIN:
-				runtime.Gosched()
-			default:
-				return 0, err
-			}
+	for n, _, _, err = wasip1syscall.RecvFromsingle(fd.sysfd, p, nil, 0); wouldblock(err); n, _, _, err = wasip1syscall.RecvFromsingle(fd.sysfd, p, nil, 0) {
+		if err = fd.waitRead(); err != nil {
+			return 0, err
 		}
 	}
-
-	n, err = readone()
 	runtime.KeepAlive(fd)
-	return n, err
+	if err != nil {
+		return 0, err
+	}
+	return n, zeroEOF(n)
 }
 
 // Write sends all of p. the host socket is non-blocking, so a send is partial or EAGAIN
-// whenever its send buffer is full; the loop yields until the remainder is accepted.
+// whenever its send buffer is full; the netpoller waits until the remainder is accepted.
 // a zero length p is still sent once, which matters for datagrams.
 func (fd *netFD) Write(p []byte) (nn int, err error) {
 	var (
@@ -241,12 +226,12 @@ func (fd *netFD) Write(p []byte) (nn int, err error) {
 	for {
 		n, err = wasip1syscall.SendToSingle(fd.sysfd, p[nn:], nil, fd.rsockaddr, 0)
 		nn += n
-		switch ffierrors.Errno(err) {
-		case syscall.EINTR, syscall.EAGAIN:
-			runtime.Gosched()
+		if wouldblock(err) {
+			if err = fd.pfd.WaitWrite(); err != nil {
+				break
+			}
 			continue
 		}
-
 		if err != nil || nn >= len(p) {
 			break
 		}
@@ -254,6 +239,30 @@ func (fd *netFD) Write(p []byte) (nn int, err error) {
 
 	runtime.KeepAlive(fd)
 	return nn, wrapSyscallError(writeSyscallName, err)
+}
+
+// wouldblock reports whether err is the host saying the socket is not ready yet, which the
+// netpoller waits out through poll_oneoff instead of the guest retrying.
+func wouldblock(err error) bool {
+	switch ffierrors.Errno(err) {
+	case syscall.EINTR, syscall.EAGAIN:
+		return true
+	default:
+		return false
+	}
+}
+
+// waitRead parks the goroutine in the netpoller until the socket is readable. pfd has no WaitRead,
+// so RawRead waits once between the two calls of its function.
+func (fd *netFD) waitRead() error {
+	var (
+		waited bool
+	)
+
+	return fd.pfd.RawRead(func(uintptr) bool {
+		waited = !waited
+		return !waited
+	})
 }
 
 func (fd *netFD) SetDeadline(t time.Time) error {
@@ -281,24 +290,19 @@ func zeroEOF(n int) error {
 	return nil
 }
 func (fd *netFD) readMsg(b, oob []byte) (n, oobn int, flags int, rsa wasip1syscall.RawSocketAddress, err error) {
-	readone := func() (n int, flags int, rsa wasip1syscall.RawSocketAddress, err error) {
-		for {
-			var rflags int32
-			if n, rsa, rflags, err = wasip1syscall.RecvFromsingle(fd.sysfd, b, oob, 0); err == nil {
-				return n, int(rflags), rsa, zeroEOF(n)
-			}
+	var (
+		rflags int32
+	)
 
-			switch ffierrors.Errno(err) {
-			case syscall.EINTR, syscall.EAGAIN:
-				runtime.Gosched()
-			default:
-				return n, int(rflags), rsa, err
-			}
+	for n, rsa, rflags, err = wasip1syscall.RecvFromsingle(fd.sysfd, b, oob, 0); wouldblock(err); n, rsa, rflags, err = wasip1syscall.RecvFromsingle(fd.sysfd, b, oob, 0) {
+		if err = fd.waitRead(); err != nil {
+			return n, oobn, int(rflags), rsa, err
 		}
 	}
-
-	n, flags, rsa, err = readone()
-	return n, oobn, flags, rsa, err
+	if err != nil {
+		return n, oobn, int(rflags), rsa, err
+	}
+	return n, oobn, int(rflags), rsa, zeroEOF(n)
 }
 
 func (fd *netFD) writeTo(p []byte, sa *wasip1syscall.RawSocketAddress) (n int, err error) {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"syscall"
+	"time"
 
 	"github.com/egdaemon/wasinet/wasinet/ffi"
 	"github.com/egdaemon/wasinet/wasinet/internal/errorsx"
@@ -34,11 +35,7 @@ func (t network) Open(ctx context.Context, af, socktype, protocol int) (fd int, 
 
 func (t network) Accept(ctx context.Context, fd int) (nfd int, sa unix.Sockaddr, err error) {
 	// slog.Log(ctx, slog.LevelDebug, "sock_accept", slog.Int("fd", fd))
-	err = ready(fd, unix.POLLIN, func() error {
-		nfd, sa, err = unix.Accept(fd)
-		return err
-	})
-	if err != nil {
+	if nfd, sa, err = unix.Accept(fd); err != nil {
 		return nfd, sa, err
 	}
 
@@ -66,6 +63,26 @@ func nonblockcloexec(fd int) error {
 	}
 
 	return nil
+}
+
+// readable waits up to d for fd to be readable, reporting whether it is. darwin has no ppoll and
+// its poll waits whole milliseconds, so select waits instead, which can not wait on an fd past
+// FD_SETSIZE.
+func readable(fd int, d time.Duration) bool {
+	var (
+		set unix.FdSet
+		tv  = unix.NsecToTimeval(int64(d))
+		n   int
+		err error
+	)
+
+	if fd >= unix.FD_SETSIZE {
+		return false
+	}
+
+	set.Set(fd)
+	n, err = unix.Select(fd+1, &set, nil, nil, &tv)
+	return err == nil && n > 0
 }
 
 func (t network) SetSocketOption(ctx context.Context, fd int, level, name int, value []byte) error {

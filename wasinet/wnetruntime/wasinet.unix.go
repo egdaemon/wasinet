@@ -5,6 +5,7 @@ package wnetruntime
 import (
 	"context"
 	"syscall"
+	"time"
 
 	"github.com/egdaemon/wasinet/wasinet/ffi"
 	"github.com/egdaemon/wasinet/wasinet/internal/errorsx"
@@ -22,11 +23,20 @@ func (t network) Accept(ctx context.Context, fd int) (nfd int, sa unix.Sockaddr,
 	// slog.Log(ctx, slog.LevelDebug, "sock_accept", slog.Int("fd", fd))
 	// linux does not inherit O_NONBLOCK from the listener, and a blocking socket stalls every
 	// goroutine in the guest once its buffer fills, so the flags Open sets are set here too.
-	err = ready(fd, unix.POLLIN, func() error {
-		nfd, sa, err = unix.Accept4(fd, syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC)
-		return err
-	})
-	return nfd, sa, err
+	return unix.Accept4(fd, syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC)
+}
+
+// readable waits up to d for fd to be readable, reporting whether it is.
+func readable(fd int, d time.Duration) bool {
+	var (
+		ts  = unix.NsecToTimespec(int64(d))
+		fds = []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+		n   int
+		err error
+	)
+
+	n, err = unix.Ppoll(fds, &ts, nil)
+	return err == nil && n > 0
 }
 
 func (t network) SetSocketOption(ctx context.Context, fd int, level, name int, value []byte) error {

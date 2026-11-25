@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/egdaemon/wasinet/wasinet/internal/errorsx"
 	"github.com/egdaemon/wasinet/wasinet/internal/langx"
@@ -23,6 +24,11 @@ const (
 	WASI_AF_INET  = 2
 	WASI_AF_INET6 = 3
 )
+
+// recvwindow is how long a receive that would block waits on the host before the guest parks the
+// goroutine in its netpoller. A reply arriving within it costs the guest no goroutine switch, which
+// is expensive in wasm, and the wait holds every goroutine in the guest for at most this long.
+const recvwindow = 50 * time.Microsecond
 
 // Socket interface
 type Socket interface {
@@ -232,10 +238,10 @@ func (t network) AddrPort(ctx context.Context, network string, service string) (
 }
 
 func (t network) RecvFrom(ctx context.Context, fd int, vecs [][]byte, oob []byte, flags int) (n int, roflags int, sa unix.Sockaddr, err error) {
-	err = ready(fd, unix.POLLIN, func() error {
+	n, _, roflags, sa, err = unix.RecvmsgBuffers(fd, vecs, oob, flags)
+	if errors.Is(err, unix.EAGAIN) && readable(fd, recvwindow) {
 		n, _, roflags, sa, err = unix.RecvmsgBuffers(fd, vecs, oob, flags)
-		return err
-	})
+	}
 	return n, roflags, sa, err
 }
 
@@ -247,37 +253,12 @@ func (t network) SendTo(ctx context.Context, fd int, sa unix.Sockaddr, vecs [][]
 	case *unix.SockaddrUnix:
 		// apparently its fine to send the sock address to a tcp stream
 		// but for unix sockets it'll return syscall.EISCONN
-		err = ready(fd, unix.POLLOUT, func() error {
-			n, err = unix.SendmsgBuffers(fd, vecs, oob, nil, flags)
-			return err
-		})
-		return n, err
+		return unix.SendmsgBuffers(fd, vecs, oob, nil, flags)
 	default:
 		if err = t.restricted(sa); err != nil {
 			return 0, err
 		}
 
-		err = ready(fd, unix.POLLOUT, func() error {
-			n, err = unix.SendmsgBuffers(fd, vecs, oob, sa, flags)
-			return err
-		})
-		return n, err
+		return unix.SendmsgBuffers(fd, vecs, oob, sa, flags)
 	}
-}
-
-// ready runs op on the non-blocking socket fd and, when op would block, waits up to
-// nonblockingPollWindow for fd to be ready for events and runs it once more. The guest retries an
-// operation that would block until it succeeds, so without the wait it spins the wasm thread on
-// the socket for as long as the socket stays idle. The wait holds that thread, and with it every
-// goroutine in the guest, so it stays as short as virtual's.
-func ready(fd int, events int16, op func() error) (err error) {
-	if err = op(); !errors.Is(err, unix.EAGAIN) {
-		return err
-	}
-
-	if _, err = unix.Poll([]unix.PollFd{{Fd: int32(fd), Events: events}}, int(nonblockingPollWindow.Milliseconds())); err != nil {
-		return err
-	}
-
-	return op()
 }
